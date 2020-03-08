@@ -10,4 +10,4 @@ for i in range(0, 1024-32, 32):
         num += 1
         #cv2.putText(img, str(num), (i, j), cv2.FONT_HERSHEY_TRIPLEX, 0.7, (255, 255, 255), 2)
 
-cv2.imwrite('image.png', img)
+cv2.imwrite('data/sample.png', img)
