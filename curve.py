@@ -5,15 +5,15 @@ from base_transform import Transform
 
 class Curve(Transform):
 
-    def __init__(self, flexure=128, direction="down", **kwargs):
+    def __init__(self, flexure=0.1, direction="down", **kwargs):
         """
         cureve origin paper to curved paper
-        :param flexure: maximum shifted pixel
+        :param flexure: maximum shifted pixel within ratio
         :param direction: curve direction
         """
         super().__init__(**kwargs)
 
-        self.flexure = flexure
+        self.flexure = flexure * self.width
         self.direction = direction
 
     def slide(self, h):

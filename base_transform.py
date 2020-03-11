@@ -1,18 +1,44 @@
 import cv2
+from PIL import Image
 import numpy as np
 from os.path import join as pjoin
 
 
 class Transform:
 
-    def __init__(self, img_file, res_file="sample.png", spacing=20):
-        self.origin = cv2.imread(pjoin("data", img_file))
+    def __init__(self, ipt, opt="sample.png", spacing=20,
+                 ipt_format="PIL", opt_format="PIL"):
+        """
+        image with matrix transformation
+        :param img: img object
+            If img is "opencv", img format should be numpy array
+            If img is "PIL", img format should be PIL.Image object
+            If img is "file", img format should be string file name.
+        :param opt: when opt_format is "file", opt should be file name.
+        :param ipt_format: ipt_format is one of ["opencv", "PIL", "file"]
+        :param opt_format: opt_format is one of ["opencv", "PIL", "file"]
+        :param spacing: length of each square pixel
+        """
+        if ipt_format == "opencv":
+            assert len(opt.shape) == 3
+            self.origin = ipt
+        elif ipt_format == "PIL":
+            self.origin = np.asarray(ipt)
+        elif ipt_format == "file":
+            self.origin = cv2.imread(pjoin("data", ipt))
+        else:
+            raise ValueError("ipt_format should be one of ['opencv', 'PIL', 'file']")
+        if opt_format not in ["opencv", "PIL", "file"]:
+            raise ValueError("opt_format should be one of ['opencv', 'PIL', 'file']")
+
+        self.opt = opt
+        self.opt_format = opt_format
+
         self.width = self.origin.shape[1]
         self.height = self.origin.shape[0]
         print("width: ", self.width, "height: ", self.height)
 
         self.spacing = spacing
-        self.res_file = res_file
 
     def slide(self, h):
         raise NotImplemented
@@ -25,7 +51,14 @@ class Transform:
         return widths, heights
 
     def save(self, img):
-        cv2.imwrite(pjoin("res", self.res_file), img)
+        if self.opt_format == "opencv":
+            return img
+        elif self.opt_format == "PIL":
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            return Image.fromarray(img)
+        elif self.opt_format == "file":
+            cv2.imwrite(pjoin("res", self.opt), img)
+            return None
 
     def run(self):
         output = np.zeros((self.height, self.width, 3), np.uint8)
@@ -47,5 +80,5 @@ class Transform:
                 mat = cv2.getPerspectiveTransform(src, dst)
                 warp = cv2.warpPerspective(self.origin, mat, (self.width, self.height))
                 output[height: height + self.spacing, width:width + self.spacing] = warp[height: height + self.spacing, width:width+self.spacing]
-        self.save(output)
+        return self.save(output)
 
