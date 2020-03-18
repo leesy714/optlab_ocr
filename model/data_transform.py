@@ -8,11 +8,11 @@ import cv2
 
 sys.path.append("../")
 from curve import Curve
-
+from folded import Folded
 
 class Pipeline:
 
-    def __init__(self, width=800, height=1200):
+    def __init__(self, width=960, height=1280):
         self.width = width
         self.height = height
 
@@ -25,21 +25,30 @@ class Pipeline:
     def load_np(self, idx):
         imgs = np.fromstring(open(os.path.join("/data/origin", idx), "rb").read(), dtype=np.uint8)
         ys = np.fromstring(open(os.path.join("/data/origin_label", idx), "rb").read(), dtype=np.uint8)
-        return imgs.reshape(-1, self.height, self.width, 3), ys.reshape(-1, self.height, self.width)
+        return imgs.reshape(-1, self.height, self.width, 3), ys.reshape(-1, self.height // 2, self.width // 2)
 
     def transform(self, imgs, ys):
-        c = Curve(width=self.width, height=self.height, spacing=100)
         assert imgs.shape[0] == ys.shape[0]
         batch = imgs.shape[0]
         for b in tqdm.tqdm(range(batch)):
-            imgs[b] = c.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
-            y = c.run(1, ys[b].reshape(self.height, self.width, 1),
-                      ipt_format="opencv", opt_format="opencv")
-            ys[b] = y.reshape(self.height, self.width)
+            if b % 2 == 0:
+                curve_random = random.randint(5, 20)
+                curve_mode = "down" if curve_random > 10 else "up"
+                tran = Curve(width=self.width, height=self.height, spacing=100,
+                          flexure=curve_random/100, direction=curve_mode)
+            else:
+                folded_up = random.randint(5, 20)
+                folded_down = random.randint(5, 20)
+                tran = Folded(width=self.width, height=self.height, spacing=100,
+                              up_slope=folded_up/100, down_slope=folded_down/100)
+            imgs[b] = tran.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
+            y = tran.run(1, cv2.resize(ys[b], (self.width, self.height)).reshape(self.height, self.width, 1),
+                         ipt_format="opencv", opt_format="opencv")
+            ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
 
-        heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
-        cv2.imwrite("label_curved.png", heatmap_img)
-        cv2.imwrite("origin_curved.png", imgs[0])
+        #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
+        #cv2.imwrite("label_curved.png", heatmap_img)
+        #cv2.iimwrite("origin_curved.png", imgs[0])
         return imgs, ys
 
     def save(self, imgs, ys, idx=0):
@@ -57,7 +66,7 @@ class Pipeline:
     def run(self):
         for batch in self.load_files():
             imgs, ys = self.load_np(batch)
-            print(imgs.shape, ys.shape)
+            print(batch, imgs.shape, ys.shape)
             imgs, ys = self.transform(imgs, ys)
             self.save(imgs, ys, batch)
 

@@ -9,12 +9,12 @@ import cv2
 class RandomText:
 
     def __init__(self, format_path, text_type_list, location_list, fontsize_list,
-                 output_num=1, batch_num=256, width=800, height=1200):
+                 output_num=1, batch_size=256, width=960, height=1280):
 
 
         self.text_type_list = text_type_list
 
-        self.batch_num = batch_num
+        self.batch_size = batch_size
         self.output_num = output_num
         self.img = Image.open(format_path).convert("RGB")
         print("img size: ", self.img.size)
@@ -22,7 +22,8 @@ class RandomText:
         self.location_list = [(int(x*width/self.img.size[0]), int(y*height/self.img.size[1])) for x, y in location_list]
         self.fontsize_list = [int(f*width/self.img.size[0]) for f in fontsize_list]
         self.img = self.img.resize((width, height))
-
+        self.width = width
+        self.height = height
 
     def str_generate(self):
         text_list = []
@@ -61,7 +62,7 @@ class RandomText:
         #print(text, font.getsize(text))
         font_size = font.getsize(text)
         to_xy = (xy[0] + font_size[0], xy[1] + font_size[1])
-        y[xy[0]: to_xy[0], xy[1]: to_xy[1]] = idx*30
+        y[xy[0]: to_xy[0], xy[1]: to_xy[1]] = idx
         draw = ImageDraw.Draw(img)
         draw.text(xy, text, font=font, fill="black")
         return img, y
@@ -81,12 +82,14 @@ class RandomText:
     def run(self):
         font = 'fonts/NanumGothic.ttf'
 
-        batches = self.output_num // self.batch_num + 1
+        batches = self.output_num // self.batch_size + 1
         img_size = self.img.size
         for batch in tqdm.tqdm(range(batches)):
-            data_len = min(self.output_num - self.batch_num * batch, self.batch_num)
+            data_len = min(self.output_num - self.batch_size * batch, self.batch_size)
+            if data_len == 0:
+                continue
             imgs = np.zeros((data_len, img_size[1], img_size[0], 3), dtype=np.uint8)
-            ys = np.empty((data_len, img_size[1], img_size[0]), dtype=np.uint8)
+            ys = np.empty((data_len, img_size[1] // 2, img_size[0] // 2), dtype=np.uint8)
 
             for _ in range(data_len):
                 img = self.img.copy()
@@ -95,13 +98,13 @@ class RandomText:
                 text_list = self.str_generate()
                 for idx, (text, xy, fontsize) in enumerate(zip(text_list, self.location_list, self.fontsize_list)):
                     img, y = self.draw_text(idx, img, y, font, text, xy, fontsize)
-                #img.save("res.png")
-                #map_img = np.uint8(y.transpose())
-                #heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
-                #cv2.imwrite("label.png", heatmap_img)
+                img.save("res.png")
+                map_img = np.clip(y.transpose() * (255 / len(self.location_list)), 0, 255).astype(np.uint8)
+                heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
+                cv2.imwrite("label.png", heatmap_img)
 
                 imgs[_] = np.asarray(img)
-                ys[_] = y.transpose()
+                ys[_] = cv2.resize(y.transpose(), (self.width // 2, self.height //2))
             self.save(imgs, ys, batch)
 
 
@@ -141,6 +144,6 @@ if __name__=='__main__':
 
 
     random_text = RandomText("./data/format.png", text_type_list, location_list,
-                             fontsize_list, output_num=500)
+                             fontsize_list, output_num=3000, batch_size=4)
     img = random_text.run()
 
