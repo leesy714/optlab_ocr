@@ -1,4 +1,5 @@
 import os
+import cv2
 import numpy as np
 import torch
 from torch import nn
@@ -64,10 +65,10 @@ class double_conv(nn.Module):
     def __init__(self, in_ch, mid_ch, out_ch):
         super(double_conv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, mid_ch, kernel_size=1),
+            nn.Conv2d(in_ch, mid_ch, kernel_size=7, padding=3),
             nn.BatchNorm2d(mid_ch),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_ch, out_ch, kernel_size=3, padding=1),
+            nn.Conv2d(mid_ch, out_ch, kernel_size=7, padding=3),
             nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True)
         )
@@ -83,7 +84,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
 
         self.conv = nn.Sequential(
-            nn.Conv2d(1, 4, kernel_size=3, padding=1),
+            nn.Conv2d(1, 4, kernel_size=7, padding=3),
             nn.BatchNorm2d(4),
             nn.ReLU(inplace=True)
         )
@@ -94,7 +95,7 @@ class Model(nn.Module):
         self.conv_cls = nn.Sequential(
             #nn.Conv2d(64, 32, kernel_size=3, padding=1), nn.ReLU(inplace=True),
             #nn.Conv2d(32, 16, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv2d(16, 16, kernel_size=1), nn.ReLU(inplace=True),
+            nn.Conv2d(16, 16, kernel_size=5, padding=2), nn.ReLU(inplace=True),
             nn.Conv2d(16, classes + 1, kernel_size=1),
         )
 
@@ -166,6 +167,27 @@ class Train:
         total_loss /= len(iterator)
         return total_loss[0]
 
+    def test(self):
+        self.model.eval()
+        for batch, (imgs, ys) in enumerate(self.test_loader):
+            imgs = imgs.to(device)
+            pred, _ = self.model(imgs)
+            pred = pred.permute(0, 2, 3, 1)
+            _, argmax = pred.max(dim=3)
+            print(argmax.size())
+            argmax = argmax.cpu().data.numpy()
+            imgs = imgs.squeeze().cpu().data.numpy()
+            for idx in range(argmax.shape[0]):
+                img = argmax[idx]
+                origin = np.clip(imgs[idx] * 255, 0, 255).astype(np.uint8)
+                print(origin.shape, img.shape)
+                img = np.clip(img*(255 / self.classes), 0, 255).astype(np.uint8)
+                img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                origin = cv2.applyColorMap(origin, cv2.COLORMAP_JET)
+                cv2.imwrite("./res/{}.png".format(idx), img)
+                cv2.imwrite("./res/{}_craft.png".format(idx), origin)
+            break
+
     def count_parameters(self):
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
@@ -176,7 +198,7 @@ class Train:
                                      lr=self.learning_rate,
                                      weight_decay=0)
         print(self.model)
-        self.num_params = self.count_parameters()
+        print(self.count_parameters())
         tot_vali_loss = np.inf
         for epoch in range(self.epochs):
             train_loss = self.train(epoch, loss_func, optimizer)
@@ -184,9 +206,9 @@ class Train:
             print("train loss: {:.4} vali loss: {:.4}".format(train_loss, vali_loss))
         #print("train_loss: {:.5}, vali_loss: {:.5}, test_loss: {:.5}"
         #      .format(train_nrmse, vali_nrmse, test_nrmse))
-
+        self.test()
 
 if __name__ == "__main__":
-    train = Train(classes=9)
+    train = Train(classes=9, epochs=7, batch_size=8)
     train.run()
 
