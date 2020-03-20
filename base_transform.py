@@ -6,8 +6,7 @@ from os.path import join as pjoin
 
 class Transform:
 
-    def __init__(self, ipt, opt="sample.png", spacing=20,
-                 ipt_format="PIL", opt_format="PIL"):
+    def __init__(self, width, height, spacing=40, verbose=False):
         """
         image with matrix transformation
         :param img: img object
@@ -19,26 +18,13 @@ class Transform:
         :param opt_format: opt_format is one of ["opencv", "PIL", "file"]
         :param spacing: length of each square pixel
         """
-        if ipt_format == "opencv":
-            assert len(opt.shape) == 3
-            self.origin = ipt
-        elif ipt_format == "PIL":
-            self.origin = np.asarray(ipt)
-        elif ipt_format == "file":
-            self.origin = cv2.imread(pjoin("data", ipt))
-        else:
-            raise ValueError("ipt_format should be one of ['opencv', 'PIL', 'file']")
-        if opt_format not in ["opencv", "PIL", "file"]:
-            raise ValueError("opt_format should be one of ['opencv', 'PIL', 'file']")
-
-        self.opt = opt
-        self.opt_format = opt_format
-
-        self.width = self.origin.shape[1]
-        self.height = self.origin.shape[0]
-        print("width: ", self.width, "height: ", self.height)
+        self.width = width
+        self.height = height
+        if verbose:
+            print("width: ", self.width, "height: ", self.height)
 
         self.spacing = spacing
+        self.verbose = verbose
 
     def slide(self, h):
         raise NotImplemented
@@ -50,19 +36,38 @@ class Transform:
                    for w in range(0, self.width, self.spacing)]
         return widths, heights
 
-    def save(self, img):
-        if self.opt_format == "opencv":
+    def load_ipt(self, ipt, ipt_format):
+        if ipt_format == "opencv":
+            assert len(ipt.shape) == 3
+            self.origin = ipt
+        elif ipt_format == "PIL":
+            self.origin = np.asarray(ipt)
+        elif ipt_format == "file":
+            self.origin = cv2.imread(pjoin("data", ipt))
+        else:
+            raise ValueError("ipt_format should be one of ['opencv', 'PIL', 'file']")
+
+    def save(self, img, opt, opt_format):
+        if opt_format == "opencv":
             return img
-        elif self.opt_format == "PIL":
+        elif opt_format == "PIL":
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             return Image.fromarray(img)
-        elif self.opt_format == "file":
-            cv2.imwrite(pjoin("res", self.opt), img)
+        elif opt_format == "file":
+            cv2.imwrite(pjoin("res", opt), img)
             return None
 
-    def run(self):
-        output = np.zeros((self.height, self.width, 3), np.uint8)
-        print("output", output.shape)
+    def run(self, channel, ipt, ipt_format="file", opt="res.png", opt_format="file"):
+        if opt_format not in ["opencv", "PIL", "file"]:
+            raise ValueError("opt_format should be one of ['opencv', 'PIL', 'file']")
+        self.load_ipt(ipt, ipt_format)
+
+        if channel > 1:
+            output = np.zeros((self.height, self.width, channel), np.uint8)
+        else:
+            output = np.zeros((self.height, self.width), np.uint8)
+        if self.verbose:
+            print("output", output.shape)
         widths, heights = self.get_transform()
         for w in range(int(self.width / self.spacing)):
             for h in range(int(self.height / self.spacing)):
@@ -80,5 +85,5 @@ class Transform:
                 mat = cv2.getPerspectiveTransform(src, dst)
                 warp = cv2.warpPerspective(self.origin, mat, (self.width, self.height))
                 output[height: height + self.spacing, width:width + self.spacing] = warp[height: height + self.spacing, width:width+self.spacing]
-        return self.save(output)
+        return self.save(output, opt, opt_format)
 
