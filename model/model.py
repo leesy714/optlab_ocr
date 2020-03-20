@@ -16,7 +16,7 @@ class Data(Dataset):
     def __init__(self, classes):
         self.classes = classes
         x, y = self.load()
-        print(x.shape, y.shape)
+        print("data shape", x.shape, y.shape)
         self.x = x
         self.y = y
         self.data_len = x.shape[0]
@@ -31,9 +31,6 @@ class Data(Dataset):
             imgs = np.fromstring(open(os.path.join(ipt_dir, idx), "rb").read(), dtype=np.float32)
             ys = np.fromstring(open(os.path.join(opt_dir, idx), "rb").read(), dtype=np.uint8)
             imgs = imgs.reshape(-1, 640, 480, 1)
-            #one_hot = np.zeros((ys.size, self.classes + 1))
-            #one_hot[np.arange(ys.size), ys] = 1
-            #total_ys.append(one_hot.reshape(-1, 640, 480, self.classes + 1))
             total_imgs.append(imgs)
             total_ys.append(ys.reshape(-1, 640, 480))
         total_imgs = np.concatenate(total_imgs)
@@ -89,12 +86,9 @@ class Model(nn.Module):
             nn.ReLU(inplace=True)
         )
         self.conv1 = double_conv(4, 8, 16)
-        #self.conv2 = double_conv(16, 32, 64)
 
 
         self.conv_cls = nn.Sequential(
-            #nn.Conv2d(64, 32, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            #nn.Conv2d(32, 16, kernel_size=3, padding=1), nn.ReLU(inplace=True),
             nn.Conv2d(16, 16, kernel_size=5, padding=2), nn.ReLU(inplace=True),
             nn.Conv2d(16, classes + 1, kernel_size=1),
         )
@@ -107,12 +101,8 @@ class Model(nn.Module):
     def forward(self, x):
         y = self.conv(x)
         feature = self.conv1(y)
-        #y = self.conv1(y)
-        #feature = self.conv2(y)
         y = self.conv_cls(feature)
 
-        #return F.softmax(y.permute(0,2,3,1), dim=3), feature
-        #return y.permute(0,2,3,1), feature
         return y, feature
 
 class Train:
@@ -192,20 +182,17 @@ class Train:
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
     def run(self):
-        #loss_func = nn.MultiLabelSoftMarginLoss()
         loss_func = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(self.model.parameters(),
                                      lr=self.learning_rate,
                                      weight_decay=0)
         print(self.model)
-        print(self.count_parameters())
+        print("parameters: ",self.count_parameters())
         tot_vali_loss = np.inf
         for epoch in range(self.epochs):
             train_loss = self.train(epoch, loss_func, optimizer)
             vali_loss = self.validate(epoch, self.vali_loader, loss_func)
             print("train loss: {:.4} vali loss: {:.4}".format(train_loss, vali_loss))
-        #print("train_loss: {:.5}, vali_loss: {:.5}, test_loss: {:.5}"
-        #      .format(train_nrmse, vali_nrmse, test_nrmse))
         self.test()
 
 if __name__ == "__main__":
