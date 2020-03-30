@@ -15,30 +15,36 @@ class Data(Dataset):
 
     def __init__(self, classes):
         self.classes = classes
-        x, y = self.load()
-        print("data shape", x.shape, y.shape)
+        x, y, base = self.load()
+        print("data shape", x.shape, y.shape, base.shape)
         self.x = x
         self.y = y
+        self.base = base
         self.data_len = x.shape[0]
 
     def load(self):
+        base_dir = "/data/origin_noise"
         ipt_dir = "/data/origin_craft"
         opt_dir = "/data/origin_noise_label"
         file_list = os.listdir(ipt_dir)
-        assert len(file_list) == len(os.listdir(opt_dir))
-        total_imgs, total_ys = [], []
+        assert len(file_list) == len(os.listdir(opt_dir)) == len(os.listdir(base_dir))
+        total_imgs, total_ys, total_bases = [], [], []
         for idx in file_list:
+            bases = np.fromstring(open(os.path.join(base_dir, idx), "rb").read(), dtype=np.uint8)
             imgs = np.fromstring(open(os.path.join(ipt_dir, idx), "rb").read(), dtype=np.float32)
             ys = np.fromstring(open(os.path.join(opt_dir, idx), "rb").read(), dtype=np.uint8)
             imgs = imgs.reshape(-1, 640, 480, 1)
             total_imgs.append(imgs)
             total_ys.append(ys.reshape(-1, 640, 480))
+            total_bases.append(bases.reshape(-1, 1280, 960, 3))
         total_imgs = np.concatenate(total_imgs)
         total_ys = np.concatenate(total_ys)
-        return np.transpose(total_imgs, (0, 3, 1, 2)), total_ys.astype(np.int64)
+        total_bases = np.concatenate(total_bases)
+
+        return np.transpose(total_imgs, (0, 3, 1, 2)), total_ys.astype(np.int64), total_bases
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y[idx]
+        return self.x[idx], self.y[idx], self.base[idx]
 
     def __len__(self):
         return self.data_len
@@ -62,10 +68,10 @@ class double_conv(nn.Module):
     def __init__(self, in_ch, mid_ch, out_ch):
         super(double_conv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, mid_ch, kernel_size=7, padding=3),
+            nn.Conv2d(in_ch, mid_ch, kernel_size=(9, 7), padding=(4, 3)),
             nn.BatchNorm2d(mid_ch),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_ch, out_ch, kernel_size=7, padding=3),
+            nn.Conv2d(mid_ch, out_ch, kernel_size=(9, 7), padding=(4, 3)),
             nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True)
         )
@@ -81,7 +87,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
 
         self.conv = nn.Sequential(
-            nn.Conv2d(1, 4, kernel_size=7, padding=3),
+            nn.Conv2d(1, 4, kernel_size=(9, 7), padding=(4, 3)),
             nn.BatchNorm2d(4),
             nn.ReLU(inplace=True)
         )
@@ -89,7 +95,7 @@ class Model(nn.Module):
 
 
         self.conv_cls = nn.Sequential(
-            nn.Conv2d(16, 16, kernel_size=5, padding=2), nn.ReLU(inplace=True),
+            nn.Conv2d(16, 16, kernel_size=7, padding=3), nn.ReLU(inplace=True),
             nn.Conv2d(16, classes + 1, kernel_size=1),
         )
 
@@ -131,7 +137,8 @@ class Train:
         total_loss = torch.Tensor([0])
         pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
                     desc="({0:^3})".format(epoch))
-        for batch, (imgs, ys) in pbar:
+
+        for batch, (imgs, ys, _) in pbar:
             imgs = imgs.to(device)
             ys = ys.to(device)
             optimizer.zero_grad()
@@ -148,7 +155,8 @@ class Train:
     def validate(self, epoch, iterator, loss_func):
         self.model.eval()
         total_loss = torch.Tensor([0])
-        for batch, (imgs, ys) in enumerate(iterator):
+
+        for batch, (imgs, ys, _) in enumerate(iterator):
             imgs = imgs.to(device)
             ys = ys.to(device)
             pred, _ = self.model(imgs)
@@ -159,7 +167,8 @@ class Train:
 
     def test(self):
         self.model.eval()
-        for batch, (imgs, ys) in enumerate(self.test_loader):
+
+        for batch, (imgs, ys, bases) in enumerate(self.test_loader):
             imgs = imgs.to(device)
             pred, _ = self.model(imgs)
             pred = pred.permute(0, 2, 3, 1)
@@ -167,13 +176,15 @@ class Train:
             print(argmax.size())
             argmax = argmax.cpu().data.numpy()
             imgs = imgs.squeeze().cpu().data.numpy()
+
+            bases = bases.squeeze().cpu().data.numpy()
             for idx in range(argmax.shape[0]):
                 img = argmax[idx]
                 origin = np.clip(imgs[idx] * 255, 0, 255).astype(np.uint8)
-                print(origin.shape, img.shape)
                 img = np.clip(img*(255 / self.classes), 0, 255).astype(np.uint8)
                 img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
                 origin = cv2.applyColorMap(origin, cv2.COLORMAP_JET)
+                cv2.imwrite("./res/{}_base.png".format(idx), bases[idx])
                 cv2.imwrite("./res/{}.png".format(idx), img)
                 cv2.imwrite("./res/{}_craft.png".format(idx), origin)
             break
@@ -196,6 +207,6 @@ class Train:
         self.test()
 
 if __name__ == "__main__":
-    train = Train(classes=9, epochs=7, batch_size=8)
+    train = Train(classes=9, epochs=30, batch_size=8)
     train.run()
 
