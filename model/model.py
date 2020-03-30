@@ -137,6 +137,7 @@ class Train:
         total_loss = torch.Tensor([0])
         pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
                     desc="({0:^3})".format(epoch))
+
         for batch, (imgs, ys, _) in pbar:
             imgs = imgs.to(device)
             ys = ys.to(device)
@@ -154,6 +155,7 @@ class Train:
     def validate(self, epoch, iterator, loss_func):
         self.model.eval()
         total_loss = torch.Tensor([0])
+
         for batch, (imgs, ys, _) in enumerate(iterator):
             imgs = imgs.to(device)
             ys = ys.to(device)
@@ -165,6 +167,7 @@ class Train:
 
     def test(self):
         self.model.eval()
+
         for batch, (imgs, ys, bases) in enumerate(self.test_loader):
             imgs = imgs.to(device)
             pred, _ = self.model(imgs)
@@ -173,6 +176,7 @@ class Train:
             print(argmax.size())
             argmax = argmax.cpu().data.numpy()
             imgs = imgs.squeeze().cpu().data.numpy()
+
             bases = bases.squeeze().cpu().data.numpy()
             for idx in range(argmax.shape[0]):
                 img = argmax[idx]

@@ -123,6 +123,7 @@ class Pipeline:
         #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
         #cv2.imwrite("label_curved.png", heatmap_img)
         #cv2.imwrite("origin_curved.png", imgs[0])
+
         return imgs, ys
 
     def save(self, imgs, ys, idx=0):
@@ -138,12 +139,10 @@ class Pipeline:
             fout.write(ys.tostring())
 
     def run(self):
+
         for batch in tqdm.tqdm(self.load_files()):
             imgs, ys = self.load_np(batch)
             imgs, ys = self.transform(imgs, ys)
-            print("res", imgs.shape, ys.shape)
-            print("res", imgs.dtype, ys.dtype)
-            break
             self.save(imgs, ys, batch)
 
 
