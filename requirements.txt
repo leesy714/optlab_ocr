@@ -1,0 +1,13 @@
+certifi==2019.11.28
+fire==0.2.1
+mkl-fft==1.0.10
+mkl-random==1.0.2
+mkl-service==2.3.0
+numpy==1.18.1
+olefile==0.46
+Pillow==7.0.0
+six==1.14.0
+termcolor==1.1.0
+torch==1.4.0
+torchvision==0.5.0
+tqdm==4.43.0
