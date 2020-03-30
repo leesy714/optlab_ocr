@@ -27,6 +27,8 @@ class RandomText:
         self.height = height
 
         self.res_path = res_path
+        if not os.path.exists(res_path):
+            os.makedirs(res_path)
 
     def str_generate(self):
         text_list = []
