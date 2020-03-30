@@ -50,6 +50,13 @@ parser.add_argument('--poly', default=False, action='store_true', help='enable p
 args = parser.parse_args()
 
 
+def normalizeMeanVariance(in_img, mean=(0.485, 0.456, 0.406), variance=(0.229, 0.224, 0.225)):
+    # should be RGB order
+    img = in_img.copy().astype(np.float32)
+
+    img -= np.array([mean[0] * 255.0, mean[1] * 255.0, mean[2] * 255.0], dtype=np.float32)
+    img /= np.array([variance[0] * 255.0, variance[1] * 255.0, variance[2] * 255.0], dtype=np.float32)
+    return img
 
 def resize_aspect_ratio_batch(imgs, square_size, interpolation, mag_ratio=1):
     batch, height, width, channel = imgs.shape
@@ -86,7 +93,7 @@ def test_inference(net, image):
     # resize
     img_resized, target_ratio, size_heatmap = resize_aspect_ratio_batch(image, args.canvas_size, interpolation=cv2.INTER_LINEAR, mag_ratio=args.mag_ratio)
     ratio_h = ratio_w = 1 / target_ratio
-    x = imgproc.normalizeMeanVariance(img_resized)
+    x = normalizeMeanVariance(img_resized)
     x = torch.from_numpy(x).permute(0, 3, 1, 2)    # [b, h, w, c] to [b, c, h, w]
     x = Variable(x).cuda()
 
@@ -100,7 +107,7 @@ def test_inference(net, image):
 
 
 
-def inference(width=1280, height=960, res_path="imgs")
+def inference(width=1280, height=960, res_path="imgs"):
     # load net
     net = CRAFT()
 
@@ -121,7 +128,7 @@ def inference(width=1280, height=960, res_path="imgs")
     if not os.path.exists(output_path):
         os.makedirs(output_path)
         
-    origin_file_list = os.listdir(os.path.join(res_path, "origin_noise")
+    origin_file_list = os.listdir(os.path.join(res_path, "origin_noise"))
     for batch in tqdm(origin_file_list):
         imgs = np.fromstring(open(os.path.join(res_path, "origin_noise", batch), "rb").read(), dtype=np.uint8)
         imgs = imgs.reshape(-1, 1280, 960, 3)

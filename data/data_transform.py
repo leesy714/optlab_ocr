@@ -7,7 +7,6 @@ from os.path import join as pjoin
 from PIL import Image, ImageDraw, ImageFont
 import cv2
 
-sys.path.append("../")
 from curve import Curve
 from folded import Folded
 
