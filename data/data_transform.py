@@ -3,6 +3,7 @@ import sys
 import tqdm
 import random
 import numpy as np
+from os.path import join as pjoin
 from PIL import Image, ImageDraw, ImageFont
 import cv2
 
@@ -12,19 +13,21 @@ from folded import Folded
 
 class Pipeline:
 
-    def __init__(self, width=960, height=1280):
+    def __init__(self, width=960, height=1280, res_path="imgs"):
         self.width = width
         self.height = height
 
+        self.res_path = res_path
+
     def load_files(self):
-        origin_file_list = os.listdir("/data/origin")
-        label_file_list = os.listdir("/data/origin_label")
+        origin_file_list = os.listdir(pjoin(self.res_path, "origin"))
+        label_file_list = os.listdir(pjoin(self.res_path, "origin_label"))
         assert len(origin_file_list) == len(label_file_list)
         return origin_file_list
 
     def load_np(self, idx):
-        imgs = np.fromstring(open(os.path.join("/data/origin", idx), "rb").read(), dtype=np.uint8)
-        ys = np.fromstring(open(os.path.join("/data/origin_label", idx), "rb").read(), dtype=np.uint8)
+        imgs = np.fromstring(open(pjoin(self.res_path, "origin", idx), "rb").read(), dtype=np.uint8)
+        ys = np.fromstring(open(pjoin(self.res_path, "origin_label", idx), "rb").read(), dtype=np.uint8)
         return imgs.reshape(-1, self.height, self.width, 3), ys.reshape(-1, self.height // 2, self.width // 2)
 
     def bw_global(self, img_gray):
@@ -36,7 +39,7 @@ class Pipeline:
     def bw_adaptive(self, img_gray, bw_type="Gaussian"):
         block_size = 11
 
-        C = 3 + 2 * random.randint(0, 3)
+        C = 3 + 2 * random.randint(0, 2)
         if bw_type == "Gaussian":
             img_bw = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block_size, C)
         elif bw_type == "Mean":
@@ -75,7 +78,7 @@ class Pipeline:
         return img
 
     def blur(self, img):
-        sigma = np.random.randint(2, 6)
+        sigma = np.random.randint(2, 4)
         img_blur = cv2.GaussianBlur(img, (0, 0), sigma)
         return img_blur
 
@@ -127,8 +130,8 @@ class Pipeline:
         return imgs, ys
 
     def save(self, imgs, ys, idx=0):
-        origin_path = "/data/origin_noise"
-        label_path = "/data/origin_noise_label"
+        origin_path = pjoin(self.res_path, "origin_noise")
+        label_path = pjoin(self.res_path, "origin_noise_label")
         if not os.path.exists(origin_path):
             os.makedirs(origin_path)
         if not os.path.exists(label_path):
