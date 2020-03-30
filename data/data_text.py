@@ -9,7 +9,8 @@ import cv2
 class RandomText:
 
     def __init__(self, format_path, text_type_list, location_list, fontsize_list,
-                 output_num=1, batch_size=256, width=960, height=1280):
+                 output_num=1, batch_size=256, width=960, height=1280,
+                 res_path="imgs"):
 
 
         self.text_type_list = text_type_list
@@ -24,6 +25,10 @@ class RandomText:
         self.img = self.img.resize((width, height))
         self.width = width
         self.height = height
+
+        self.res_path = res_path
+        if not os.path.exists(res_path):
+            os.makedirs(res_path)
 
     def str_generate(self):
         text_list = []
@@ -68,8 +73,8 @@ class RandomText:
         return img, y
 
     def save(self, imgs, ys, idx=0):
-        origin_path = "/data/origin"
-        label_path = "/data/origin_label"
+        origin_path = os.path.join(self.res_path, "origin")
+        label_path = os.path.join(self.res_path, "origin_label")
         if not os.path.exists(origin_path):
             os.makedirs(origin_path)
         if not os.path.exists(label_path):
@@ -143,7 +148,7 @@ if __name__=='__main__':
     #******************************************************************
 
 
-    random_text = RandomText("./data/format.png", text_type_list, location_list,
-                             fontsize_list, output_num=3000, batch_size=4)
+    random_text = RandomText("./format.png", text_type_list, location_list,
+                             fontsize_list, output_num=8, batch_size=4)
     img = random_text.run()
 

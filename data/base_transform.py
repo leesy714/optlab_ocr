@@ -86,4 +86,3 @@ class Transform:
                 warp = cv2.warpPerspective(self.origin, mat, (self.width, self.height))
                 output[height: height + self.spacing, width:width + self.spacing] = warp[height: height + self.spacing, width:width+self.spacing]
         return self.save(output, opt, opt_format)
-

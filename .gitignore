@@ -123,5 +123,8 @@ cython_debug/
 media
 static
 res
+data/fonts
+data/weights
+data/imgs
 
 *.png
