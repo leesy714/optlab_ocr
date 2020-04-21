@@ -77,14 +77,50 @@ class Pipeline:
         return img
 
     def blur(self, img):
-        sigma = np.random.randint(2, 4)
+        sigma = np.random.randint(1, 3)
         img_blur = cv2.GaussianBlur(img, (0, 0), sigma)
         return img_blur
 
+    def salt_n_pepper(self, img, s_vs_p = 0.5, amount = 0.003):
+        #img = img.convert('RGB')
+        img_arr = np.array(img)
+
+        row,col,ch = img_arr.shape
+        out = np.copy(img_arr)
+        # Salt mode
+        num_salt = np.ceil(amount * img_arr.size * s_vs_p)
+
+        coords = [np.random.randint(0, i - 1, int(num_salt))
+              for i in img_arr.shape[:2]]
+
+        out[coords] = 1
+
+        # Pepper mode
+        num_pepper = np.ceil(amount* img_arr.size * (1. - s_vs_p))
+        coords = [np.random.randint(0, i - 1, int(num_pepper))
+                  for i in img_arr.shape[:2]]
+        out[coords] = 0
+        return out
+
+
+    def line_pepper(self, img, num_lines=2):
+        #img = img.convert('RGB')
+
+        img_arr = np.array(img)
+        row,col,ch = img_arr.shape
+        out = np.copy(img_arr)
+
+
+        coords = np.random.randint(0, col - 1, num_lines)
+        for c in coords:
+            out[:,c]=1
+
+        return out
+
     def noise_generate(self, img):
-        noise_type = ["BW", "Saturation", "ContrastBrightness", "Blur"]
+        noise_type = ["BW", "Saturation", "ContrastBrightness", "Blur", "SnP", "linePepper"]
         np.random.shuffle(noise_type)
-        shuffle_num = np.random.randint(1, 4)
+        shuffle_num = np.random.randint(1, len(noise_type))
         for noise in noise_type[:shuffle_num]:
             if noise == "BW":
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -96,6 +132,10 @@ class Pipeline:
                 img = self.contrast_brightness(img)
             elif noise == "Blur":
                 img = self.blur(img)
+            elif noise == "SnP":
+                img = self.salt_n_pepper(img)
+            elif noise == "linePepper":
+                img = self.line_pepper(img)
             else:
                 raise
         return img
@@ -122,9 +162,10 @@ class Pipeline:
                          ipt_format="opencv", opt_format="opencv")
             ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
 
-        #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
-        #cv2.imwrite("label_curved.png", heatmap_img)
-        #cv2.imwrite("origin_curved.png", imgs[0])
+            # 이미지 파일로 확인하기 위한 코드
+            #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
+            #cv2.imwrite("label_curved.png", heatmap_img)
+            #cv2.imwrite("origin_curved_1_{}.png".format(b), imgs[b])
 
         return imgs, ys
 
