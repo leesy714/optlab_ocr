@@ -18,15 +18,32 @@ class Pipeline:
 
         self.res_path = res_path
 
+        self.origin_path = pjoin(self.res_path, "origin_noise")
+        self.label_path = pjoin(self.res_path, "origin_noise_label")
+        self.png_path = pjoin(self.res_path, "png_noise")
+        self.bb_path = pjoin(self.res_path, "annotations")
+        if not os.path.exists(self.origin_path):
+            os.makedirs(self.origin_path)
+        if not os.path.exists(self.label_path):
+            os.makedirs(self.label_path)
+
+        if not os.path.exists(self.png_path):
+            os.makedirs(self.png_path)
+        if not os.path.exists(self.bb_path):
+            os.makedirs(self.bb_path)
+
+        self.idx = 0
+
+
     def load_files(self):
         origin_file_list = os.listdir(pjoin(self.res_path, "origin"))
         label_file_list = os.listdir(pjoin(self.res_path, "origin_label"))
         assert len(origin_file_list) == len(label_file_list)
-        return origin_file_list
+        return sorted([int(i) for i in origin_file_list])
 
     def load_np(self, idx):
-        imgs = np.fromstring(open(pjoin(self.res_path, "origin", idx), "rb").read(), dtype=np.uint8)
-        ys = np.fromstring(open(pjoin(self.res_path, "origin_label", idx), "rb").read(), dtype=np.uint8)
+        imgs = np.fromstring(open(pjoin(self.res_path, "origin", str(idx)), "rb").read(), dtype=np.uint8)
+        ys = np.fromstring(open(pjoin(self.res_path, "origin_label", str(idx)), "rb").read(), dtype=np.uint8)
         return imgs.reshape(-1, self.height, self.width, 3), ys.reshape(-1, self.height // 2, self.width // 2)
 
     def bw_global(self, img_gray):
@@ -110,11 +127,9 @@ class Pipeline:
         row,col,ch = img_arr.shape
         out = np.copy(img_arr)
 
-
         coords = np.random.randint(0, col - 1, num_lines)
         for c in coords:
             out[:,c]=1
-
         return out
 
     def noise_generate(self, img):
@@ -140,27 +155,83 @@ class Pipeline:
                 raise
         return img
 
+    def annotation(self, img, bb):
+        string = ""
+        string += "<annotation>\n"
+        string += "\t<folder>png_noise</folder>\n"
+        string += "\t<filename>{}.png</filename>\n".format(self.idx)
+        string += "\t<size>\n"
+        string += "\t\t<width>{}</width>\n".format(img.shape[1])
+        string += "\t\t<height>{}</height>\n".format(img.shape[0])
+        string += "\t\t<depth>{}</depth>\n".format(img.shape[2])
+
+        string += "\t</size>\n"
+
+
+        for (xmin,ymin),(xmax,ymax), field in bb:
+            string += "\t<object>\n"
+            string += "\t\t<name>{}</name>\n".format(field)
+            string += "\t\t<pose>Unspecified</pose>\n"
+            string += "\t\t<truncated>0</truncated>\n"
+            string += "\t\t<difficult>0</difficult>\n"
+            string += "\t\t<bndbox>\n"
+            string += "\t\t\t<xmin>{}</xmin>\n".format(xmin)
+            string += "\t\t\t<ymin>{}</ymin>\n".format(ymin)
+            string += "\t\t\t<xmax>{}</xmax>\n".format(xmax)
+            string += "\t\t\t<ymax>{}</ymax>\n".format(ymax)
+            string += "\t\t</bndbox>\n"
+            string += "\t</object>\n"
+
+        string += "</annotation>\n"
+        return string
+
+    def bbox_sample(self, img, bb):
+        img = img.copy()
+        for xy, to_xy, field in bb:
+            img = cv2.rectangle(img, xy, to_xy, (0,255,0),2)
+        return  img
+
+
+
+
+
     def transform(self, imgs, ys):
         assert imgs.shape[0] == ys.shape[0]
         batch = imgs.shape[0]
         for b in range(batch):
 
             imgs[b] = self.noise_generate(imgs[b].copy())
+            import pickle
+            with open(pjoin(self.res_path,"bb","{}.pkl".format(self.idx)),"rb") as r:
+                bb = pickle.load(r)
 
-            if b % 2 == 0:
-                curve_random = random.randint(5, 20)
-                curve_mode = "down" if curve_random > 10 else "up"
-                tran = Curve(width=self.width, height=self.height, spacing=100,
-                          flexure=curve_random/100, direction=curve_mode)
-            else:
-                folded_up = random.randint(5, 20)
-                folded_down = random.randint(5, 20)
-                tran = Folded(width=self.width, height=self.height, spacing=100,
-                              up_slope=folded_up/100, down_slope=folded_down/100)
-            imgs[b] = tran.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
-            y = tran.run(1, cv2.resize(ys[b], (self.width, self.height)).reshape(self.height, self.width, 1),
-                         ipt_format="opencv", opt_format="opencv")
-            ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
+            #if b % 2 == 0:
+            #    curve_random = random.randint(5, 20)
+            #    curve_mode = "down" if curve_random > 10 else "up"
+            #    tran = Curve(width=self.width, height=self.height, spacing=100,
+            #              flexure=curve_random/100, direction=curve_mode)
+            #else:
+            #    folded_up = random.randint(5, 20)
+            #    folded_down = random.randint(5, 20)
+            #    tran = Folded(width=self.width, height=self.height, spacing=100,
+            #                  up_slope=folded_up/100, down_slope=folded_down/100)
+            #imgs[b] = tran.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
+            #xml = self.annotation(imgs[b], bb)
+            cv2.imwrite(pjoin(self.png_path, "{}.png").format(self.idx),imgs[b])
+            bbox_img = self.bbox_sample(imgs[b], bb)
+            cv2.imwrite(pjoin(self.bb_path, "{}.png").format(self.idx),bbox_img)
+            #with open(pjoin(self.bb_path, "{}.xml").format(self.idx), 'w') as w:
+            #    w.write(xml)
+
+            with open(pjoin(self.bb_path, "{}.pkl").format(self.idx), 'wb') as w:
+                pickle.dump(bb, w)
+
+
+            self.idx+=1
+
+            #y = tran.run(1, cv2.resize(ys[b], (self.width, self.height)).reshape(self.height, self.width, 1),
+            #             ipt_format="opencv", opt_format="opencv")
+            #ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
 
             # 이미지 파일로 확인하기 위한 코드
             #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
@@ -170,15 +241,9 @@ class Pipeline:
         return imgs, ys
 
     def save(self, imgs, ys, idx=0):
-        origin_path = pjoin(self.res_path, "origin_noise")
-        label_path = pjoin(self.res_path, "origin_noise_label")
-        if not os.path.exists(origin_path):
-            os.makedirs(origin_path)
-        if not os.path.exists(label_path):
-            os.makedirs(label_path)
-        with open(os.path.join(origin_path, str(idx)), "wb") as fout:
+        with open(os.path.join(self.origin_path, str(idx)), "wb") as fout:
             fout.write(imgs.tostring())
-        with open(os.path.join(label_path, str(idx)), "wb") as fout:
+        with open(os.path.join(self.label_path, str(idx)), "wb") as fout:
             fout.write(ys.tostring())
 
     def run(self):

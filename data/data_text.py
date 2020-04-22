@@ -167,6 +167,6 @@ if __name__=='__main__':
 
 
     random_text = RandomText("./format.png", text_type_list, location_list,
-                             fontsize_list, output_num=8, batch_size=4)
+                             fontsize_list, output_num=2000, batch_size=4)
     img = random_text.run()
 
