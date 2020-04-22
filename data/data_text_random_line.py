@@ -11,7 +11,7 @@ class RandomText:
     def __init__(self, format_path, text_type_lists, location_lists, fontsize_list,
                  output_num=1, batch_size=256, width=960, height=1280,
                  res_path="imgs"):
-        
+
         self.batch_size = batch_size
         self.output_num = output_num
         self.img = Image.open(format_path).convert("RGB")
@@ -20,7 +20,7 @@ class RandomText:
         self.text_type_lists = text_type_lists
         self.location_lists = location_lists
         self.fontsize_lists = fontsize_lists
-        
+
         self.org_img = self.img
         self.img = self.img.resize((width, height))
         self.width = width
@@ -97,40 +97,48 @@ class RandomText:
             ys = np.empty((data_len, img_size[1] // 2, img_size[0] // 2), dtype=np.uint8)
 
             for _ in range(data_len):
-                
+
                 ############### 생성할 때마다 line 수 변경 #############
                 gen_num = np.random.randint(len(self.text_type_lists))
                 text_type_list = self.text_type_lists[gen_num]
                 location_list = [(int(x*self.width/self.org_img.size[0]), int(y*self.height/self.org_img.size[1])) for x, y in self.location_lists[gen_num]]
                 fontsize_list = [int(f*self.width/self.org_img.size[0]) for f in self.fontsize_lists[gen_num]]
                 ######################################################
-                
+
                 img = self.img.copy()
                 size = img.size
                 y = np.zeros(img.size)
                 text_list = self.str_generate(text_type_list)
                 for idx, (text, xy, fontsize) in enumerate(zip(text_list, location_list, fontsize_list)):
+                    idx = idx + 1
+                    if idx > 8 + gen_num * 5:
+                        idx = 9
+                    elif idx > 8:
+                        idx = 4 + (idx-4) % 5
                     img, y = self.draw_text(idx, img, y, font, text, xy, fontsize)
-                
+
                 # 예시 별로 이미지 출력
-                # img.save("res_"+str(gen_num)+".png")
-                
-                map_img = np.clip(y.transpose() * (255 / len(location_list)), 0, 255).astype(np.uint8)
-                heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
-                cv2.imwrite("label.png", heatmap_img)
+                #img.save("res_"+str(gen_num)+".png")
+
+                #map_img = np.clip(y.transpose() * (255 / len(location_list)), 0, 255).astype(np.uint8)
+                #map_img = np.clip(y.transpose() * (255 / 9), 0, 255).astype(np.uint8)
+                #heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
+                #cv2.imwrite("label.png", heatmap_img)
 
                 imgs[_] = np.asarray(img)
                 ys[_] = cv2.resize(y.transpose(), (self.width // 2, self.height //2))
+                break
+            break
             self.save(imgs, ys, batch)
-            
-            
-            
+
+
+
 if __name__=='__main__':
-    
+
     # 건강보험자격득실서 text 생성
-    
+
     #***************** box 별로 text type을 입력받는 경우 ***************
-    
+
     #*********************** UI를 통해 받아야할 자료 ********************
     # 발급번호
     text_type_0 = (['a000000000000000'], True)
@@ -160,93 +168,93 @@ if __name__=='__main__':
 
     # 날짜
     text_type_8 = (['0000.00.00', '0000/00/00', '0000-00-00'], True)
-    
+
     # sample
     # list 형태로 받을 것이라고 가정
-    text_type_list_0 = [text_type_0, text_type_1, text_type_2, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
+    text_type_list_0 = [text_type_0, text_type_1, text_type_2,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
                         text_type_8]
-    
-    location_list_0 = [(330, 220), (1050, 480), (500, 480), 
+
+    location_list_0 = [(330, 220), (1050, 480), (500, 480),
                        (130, 750), (200, 750), (450, 750), (1100, 750), (1370, 750),
                        (750, 1720)]
-    
+
     fontsize_list_0 = [30, 30, 30,
                        25, 25, 25, 25, 25,
                        25]
-    
-    text_type_list_1 = [text_type_0, text_type_1, text_type_2, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
+
+    text_type_list_1 = [text_type_0, text_type_1, text_type_2,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
                         text_type_8]
-    
-    location_list_1 = [(330, 220), (1050, 480), (500, 480), 
+
+    location_list_1 = [(330, 220), (1050, 480), (500, 480),
                        (130, 750), (200, 750), (450, 750), (1100, 750), (1370, 750),
                        (130, 830), (200, 830), (450, 830), (1100, 830), (1370, 830),
                        (750, 1720)]
-    
+
     fontsize_list_1 = [30, 30, 30,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25]
-    
-    text_type_list_2 = [text_type_0, text_type_1, text_type_2, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
+
+    text_type_list_2 = [text_type_0, text_type_1, text_type_2,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
                         text_type_8]
-    
-    location_list_2 = [(330, 220), (1050, 480), (500, 480), 
+
+    location_list_2 = [(330, 220), (1050, 480), (500, 480),
                        (130, 750), (200, 750), (450, 750), (1100, 750), (1370, 750),
                        (130, 830), (200, 830), (450, 830), (1100, 830), (1370, 830),
                        (130, 910), (200, 910), (450, 910), (1100, 910), (1370, 910),
                        (750, 1720)]
-    
+
     fontsize_list_2 = [30, 30, 30,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25]
-    
-    text_type_list_3 = [text_type_0, text_type_1, text_type_2, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
+
+    text_type_list_3 = [text_type_0, text_type_1, text_type_2,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
                         text_type_8]
-    
-    location_list_3 = [(330, 220), (1050, 480), (500, 480), 
+
+    location_list_3 = [(330, 220), (1050, 480), (500, 480),
                        (130, 750), (200, 750), (450, 750), (1100, 750), (1370, 750),
                        (130, 835), (200, 835), (450, 835), (1100, 835), (1370, 835),
                        (130, 920), (200, 920), (450, 920), (1100, 920), (1370, 920),
                        (130, 1005), (200, 1005), (450, 1005), (1100, 1005), (1370, 1005),
                        (750, 1720)]
-    
-    
+
+
     fontsize_list_3 = [30, 30, 30,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25]
-    
-    text_type_list_4 = [text_type_0, text_type_1, text_type_2, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
+
+    text_type_list_4 = [text_type_0, text_type_1, text_type_2,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
                         text_type_8]
-    
-    location_list_4 = [(330, 220), (1050, 480), (500, 480), 
+
+    location_list_4 = [(330, 220), (1050, 480), (500, 480),
                        (130, 750), (200, 750), (450, 750), (1100, 750), (1370, 750),
                        (130, 835), (200, 835), (450, 835), (1100, 835), (1370, 835),
                        (130, 920), (200, 920), (450, 920), (1100, 920), (1370, 920),
                        (130, 1005), (200, 1005), (450, 1005), (1100, 1005), (1370, 1005),
                        (130, 1090), (200, 1090), (450, 1090), (1100, 1090), (1370, 1090),
                        (750, 1720)]
-    
-    
+
+
     fontsize_list_4 = [30, 30, 30,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
@@ -254,25 +262,25 @@ if __name__=='__main__':
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25]
-    
-    text_type_list_5 = [text_type_0, text_type_1, text_type_2, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
+
+    text_type_list_5 = [text_type_0, text_type_1, text_type_2,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
                         text_type_8]
-    
-    location_list_5 = [(330, 220), (1050, 480), (500, 480), 
+
+    location_list_5 = [(330, 220), (1050, 480), (500, 480),
                        (130, 750), (200, 750), (450, 750), (1100, 750), (1370, 750),
                        (130, 835), (200, 835), (450, 835), (1100, 835), (1370, 835),
                        (130, 920), (200, 920), (450, 920), (1100, 920), (1370, 920),
                        (130, 1005), (200, 1005), (450, 1005), (1100, 1005), (1370, 1005),
                        (130, 1090), (200, 1090), (450, 1090), (1100, 1090), (1370, 1090),
                        (130, 1175), (200, 1175), (450, 1175), (1100, 1175), (1370, 1175),
-                       (750, 1720)]    
-    
+                       (750, 1720)]
+
     fontsize_list_5 = [30, 30, 30,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
@@ -281,18 +289,18 @@ if __name__=='__main__':
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25]
-    
-    text_type_list_6 = [text_type_0, text_type_1, text_type_2, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
-                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7, 
+
+    text_type_list_6 = [text_type_0, text_type_1, text_type_2,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
+                        text_type_4, text_type_3, text_type_5, text_type_6, text_type_7,
                         text_type_8]
-    
-    location_list_6 = [(330, 220), (1050, 480), (500, 480), 
+
+    location_list_6 = [(330, 220), (1050, 480), (500, 480),
                        (130, 750), (200, 750), (450, 750), (1100, 750), (1370, 750),
                        (130, 835), (200, 835), (450, 835), (1100, 835), (1370, 835),
                        (130, 920), (200, 920), (450, 920), (1100, 920), (1370, 920),
@@ -301,7 +309,7 @@ if __name__=='__main__':
                        (130, 1175), (200, 1175), (450, 1175), (1100, 1175), (1370, 1175),
                        (130, 1260), (200, 1260), (450, 1260), (1100, 1260), (1370, 1260),
                        (750, 1720)]
-    
+
     fontsize_list_6 = [30, 30, 30,
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
@@ -311,13 +319,13 @@ if __name__=='__main__':
                        25, 25, 25, 25, 25,
                        25, 25, 25, 25, 25,
                        25]
-    
-    
-    
+
+
+
     text_type_lists = []
     location_lists = []
     fontsize_lists = []
-    
+
     text_type_lists.append(text_type_list_0)
     text_type_lists.append(text_type_list_1)
     text_type_lists.append(text_type_list_2)
@@ -325,7 +333,7 @@ if __name__=='__main__':
     text_type_lists.append(text_type_list_4)
     text_type_lists.append(text_type_list_5)
     text_type_lists.append(text_type_list_6)
-    
+
     location_lists.append(location_list_0)
     location_lists.append(location_list_1)
     location_lists.append(location_list_2)
@@ -333,7 +341,7 @@ if __name__=='__main__':
     location_lists.append(location_list_4)
     location_lists.append(location_list_5)
     location_lists.append(location_list_6)
-    
+
     fontsize_lists.append(fontsize_list_0)
     fontsize_lists.append(fontsize_list_1)
     fontsize_lists.append(fontsize_list_2)
@@ -341,15 +349,15 @@ if __name__=='__main__':
     fontsize_lists.append(fontsize_list_4)
     fontsize_lists.append(fontsize_list_5)
     fontsize_lists.append(fontsize_list_6)
-    
-    
+
+
     #******************************************************************
 
     #################### 생성할 data에 따라 format.png 수정 ######################
 
-    random_text = RandomText("template/건강보험자격득실확인서 포맷.png", text_type_lists, location_lists,
+    random_text = RandomText("sample1.png", text_type_lists, location_lists,
                              fontsize_lists, output_num=8, batch_size=4)
     img = random_text.run()
-            
-            
-            
+
+
+

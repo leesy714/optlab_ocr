@@ -57,6 +57,33 @@ class Transform:
             cv2.imwrite(pjoin("res", opt), img)
             return None
 
+    def transform_points(self, points):
+        """
+        :param points: list of points, [(x, y), ... ]
+        """
+        if not isinstance(points, list):
+            points = [points]
+        t_points = []
+        widths, heights = self.get_transform()
+        for point in points:
+            w = point[0] // self.spacing
+            h = point[1] // self.spacing
+            width = widths[w][h]
+            height = heights[w][h]
+            src = np.array([[width, height],
+                            [width + self.spacing, height],
+                            [width + self.spacing, height + self.spacing],
+                            [width, height + self.spacing]], np.float32)
+            dst = np.array([[width + self.slide(h), height],
+                            [width + self.spacing + self.slide(h), height],
+                            [width + self.spacing + self.slide(h+1), +height + self.spacing],
+                            [width + self.slide(h+1), height + self.spacing]], np.float32)
+            mat = cv2.getPerspectiveTransform(src, dst)
+            point = np.array((*point, 1))
+            t_point = np.dot(mat, point)
+            t_points.append((int(t_point[0]), int(t_point[1])))
+        return t_points
+
     def run(self, channel, ipt, ipt_format="file", opt="res.png", opt_format="file"):
         if opt_format not in ["opencv", "PIL", "file"]:
             raise ValueError("opt_format should be one of ['opencv', 'PIL', 'file']")
