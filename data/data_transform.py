@@ -12,7 +12,7 @@ from folded import Folded
 
 class Pipeline:
 
-    def __init__(self, width=960, height=1280, res_path="imgs"):
+    def __init__(self, width=960, height=1280, res_path="/home/leesy714/data/ocr/imgs"):
         self.width = width
         self.height = height
 
@@ -22,6 +22,7 @@ class Pipeline:
         self.label_path = pjoin(self.res_path, "origin_noise_label")
         self.png_path = pjoin(self.res_path, "png_noise")
         self.bb_path = pjoin(self.res_path, "annotations")
+        self.bb_png_path = pjoin(self.res_path, "bb_noise_png")
         if not os.path.exists(self.origin_path):
             os.makedirs(self.origin_path)
         if not os.path.exists(self.label_path):
@@ -31,6 +32,8 @@ class Pipeline:
             os.makedirs(self.png_path)
         if not os.path.exists(self.bb_path):
             os.makedirs(self.bb_path)
+        if not os.path.exists(self.bb_png_path):
+            os.makedirs(self.bb_png_path)
 
         self.idx = 0
 
@@ -94,7 +97,7 @@ class Pipeline:
         return img
 
     def blur(self, img):
-        sigma = np.random.randint(1, 3)
+        sigma = np.random.random() * 2.0 + 0.01
         img_blur = cv2.GaussianBlur(img, (0, 0), sigma)
         return img_blur
 
@@ -185,7 +188,34 @@ class Pipeline:
         string += "</annotation>\n"
         return string
 
-    def bbox_sample(self, img, bb):
+
+    def bbox_transform(self, tran, bb):
+        points = []
+        for (xmin, ymin), (xmax, ymax), f in bb:
+            points.append((xmin,ymin))
+            points.append((xmin,ymax))
+            points.append((xmax,ymax))
+            points.append((xmax,ymin))
+
+
+        points = tran.transform_points(points)
+        new_bb = []
+        for i in range(0,len(points),4):
+            x1,y1 = points[i]
+            x2,y2 = points[i+1]
+            x3,y3 = points[i+2]
+            x4,y4 = points[i+3]
+            xmin = min(x1,x2,x3,x4)
+            ymin = min(y1,y2,y3,y4)
+            xmax = max(x1,x2,x3,x4)
+            ymax = max(y1,y2,y3,y4)
+            f = bb[i // 4][2]
+            new_bb.append(((xmin,ymin),(xmax,ymax),f))
+        return new_bb
+
+
+
+    def bbox_image(self, img, bb):
         img = img.copy()
         for xy, to_xy, field in bb:
             img = cv2.rectangle(img, xy, to_xy, (0,255,0),2)
@@ -202,36 +232,45 @@ class Pipeline:
 
             imgs[b] = self.noise_generate(imgs[b].copy())
             import pickle
-            with open(pjoin(self.res_path,"bb","{}.pkl".format(self.idx)),"rb") as r:
+            with open(pjoin(self.res_path,"bb","{:06d}.pkl".format(self.idx)),"rb") as r:
                 bb = pickle.load(r)
 
-            #if b % 2 == 0:
-            #    curve_random = random.randint(5, 20)
-            #    curve_mode = "down" if curve_random > 10 else "up"
-            #    tran = Curve(width=self.width, height=self.height, spacing=100,
-            #              flexure=curve_random/100, direction=curve_mode)
-            #else:
-            #    folded_up = random.randint(5, 20)
-            #    folded_down = random.randint(5, 20)
-            #    tran = Folded(width=self.width, height=self.height, spacing=100,
-            #                  up_slope=folded_up/100, down_slope=folded_down/100)
-            #imgs[b] = tran.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
-            #xml = self.annotation(imgs[b], bb)
-            cv2.imwrite(pjoin(self.png_path, "{}.png").format(self.idx),imgs[b])
-            bbox_img = self.bbox_sample(imgs[b], bb)
-            cv2.imwrite(pjoin(self.bb_path, "{}.png").format(self.idx),bbox_img)
-            #with open(pjoin(self.bb_path, "{}.xml").format(self.idx), 'w') as w:
-            #    w.write(xml)
+            if np.random.random()<0.05:
+                curve_random = random.randint(5, 20)
+                curve_mode = "down" if curve_random > 10 else "up"
+                tran = Curve(width=self.width, height=self.height, spacing=100,
+                          flexure=curve_random/100, direction=curve_mode)
+                imgs[b] = tran.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
+                y = tran.run(1, cv2.resize(ys[b], (self.width, self.height)).reshape(self.height, self.width, 1),
+                             ipt_format="opencv", opt_format="opencv")
+                ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
+                bb=self.bbox_transform(tran, bb)
 
-            with open(pjoin(self.bb_path, "{}.pkl").format(self.idx), 'wb') as w:
-                pickle.dump(bb, w)
+
+            elif np.random.random()<0.05/0.95:
+                folded_up = random.randint(5, 20)
+                folded_down = random.randint(5, 20)
+                tran = Folded(width=self.width, height=self.height, spacing=100,
+                              up_slope=folded_up/100, down_slope=folded_down/100)
+                imgs[b] = tran.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
+                y = tran.run(1, cv2.resize(ys[b], (self.width, self.height)).reshape(self.height, self.width, 1),
+                             ipt_format="opencv", opt_format="opencv")
+                ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
+                bb = self.bbox_transform(tran, bb)
+
+            xml = self.annotation(imgs[b], bb)
+            cv2.imwrite(pjoin(self.png_path, "{:06d}.jpg").format(self.idx),imgs[b])
+            bbox_img = self.bbox_image(imgs[b], bb)
+            cv2.imwrite(pjoin(self.bb_png_path, "{:06d}.jpg").format(self.idx),bbox_img)
+            with open(pjoin(self.bb_path, "{:06d}.xml").format(self.idx), 'w') as w:
+                w.write(xml)
+
+            #with open(pjoin(self.bb_path, "{:06d}.pkl").format(self.idx), 'wb') as w:
+            #    pickle.dump(bb, w)
 
 
             self.idx+=1
 
-            #y = tran.run(1, cv2.resize(ys[b], (self.width, self.height)).reshape(self.height, self.width, 1),
-            #             ipt_format="opencv", opt_format="opencv")
-            #ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
 
             # 이미지 파일로 확인하기 위한 코드
             #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)

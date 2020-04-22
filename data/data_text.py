@@ -10,7 +10,7 @@ class RandomText:
 
     def __init__(self, format_path, text_type_list, location_list, fontsize_list,
                  output_num=1, batch_size=256, width=960, height=1280,
-                 res_path="imgs"):
+                 res_path="/home/leesy714/data/ocr/imgs"):
 
 
         self.text_type_list = text_type_list
@@ -117,9 +117,9 @@ class RandomText:
                     img, y, to_xy = self.draw_text(idx, img, y, font, text, xy, fontsize)
                     bb.append((xy, to_xy, idx))
                 #img.save("res.png")
-                img.save(os.path.join(self.png_path, "{}.png".format(image_idx)))
+                img.save(os.path.join(self.png_path, "{:06d}.jpg".format(image_idx)))
                 import pickle
-                with open(os.path.join(self.bb_path, "{}.pkl".format(image_idx)),'wb') as fout:
+                with open(os.path.join(self.bb_path, "{:06d}.pkl".format(image_idx)),'wb') as fout:
                     pickle.dump(bb, fout)
                 map_img = np.clip(y.transpose() * (255 / len(self.location_list)), 0, 255).astype(np.uint8)
                 heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
@@ -167,6 +167,6 @@ if __name__=='__main__':
 
 
     random_text = RandomText("./format.png", text_type_list, location_list,
-                             fontsize_list, output_num=2000, batch_size=4)
+                             fontsize_list, output_num=10000, batch_size=4)
     img = random_text.run()
 
