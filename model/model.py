@@ -23,13 +23,14 @@ class Data(Dataset):
         self.data_len = x.shape[0]
 
     def load(self):
-        base_dir = "/data/origin_noise"
-        ipt_dir = "/data/origin_craft"
-        opt_dir = "/data/origin_noise_label"
+        base_dir = "../data/imgs/origin_noise"
+        ipt_dir = "../data/imgs/origin_craft"
+        opt_dir = "../data/imgs/origin_noise_label"
         file_list = os.listdir(ipt_dir)
         assert len(file_list) == len(os.listdir(opt_dir)) == len(os.listdir(base_dir))
         total_imgs, total_ys, total_bases = [], [], []
-        for idx in file_list:
+        print("start data loading")
+        for idx in tqdm(file_list):
             bases = np.fromstring(open(os.path.join(base_dir, idx), "rb").read(), dtype=np.uint8)
             imgs = np.fromstring(open(os.path.join(ipt_dir, idx), "rb").read(), dtype=np.float32)
             ys = np.fromstring(open(os.path.join(opt_dir, idx), "rb").read(), dtype=np.uint8)
@@ -207,6 +208,6 @@ class Train:
         self.test()
 
 if __name__ == "__main__":
-    train = Train(classes=9, epochs=30, batch_size=8)
+    train = Train(classes=10, epochs=25, batch_size=8)
     train.run()
 
