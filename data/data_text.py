@@ -29,6 +29,21 @@ class RandomText:
         self.res_path = res_path
         if not os.path.exists(res_path):
             os.makedirs(res_path)
+        self.origin_path = os.path.join(self.res_path, "origin")
+        self.label_path = os.path.join(self.res_path, "origin_label")
+        self.png_path = os.path.join(self.res_path, "png")
+        self.bb_path = os.path.join(self.res_path, "bb")
+        if not os.path.exists(self.origin_path):
+            os.makedirs(self.origin_path)
+        if not os.path.exists(self.label_path):
+            os.makedirs(self.label_path)
+        if not os.path.exists(self.png_path):
+            os.makedirs(self.png_path)
+        if not os.path.exists(self.bb_path):
+            os.makedirs(self.bb_path)
+
+
+
 
     def str_generate(self):
         text_list = []
@@ -68,20 +83,15 @@ class RandomText:
         font_size = font.getsize(text)
         to_xy = (xy[0] + font_size[0], xy[1] + font_size[1])
         y[xy[0]: to_xy[0], xy[1]: to_xy[1]] = idx
+
         draw = ImageDraw.Draw(img)
         draw.text(xy, text, font=font, fill="black")
-        return img, y
+        return img, y, to_xy
 
     def save(self, imgs, ys, idx=0):
-        origin_path = os.path.join(self.res_path, "origin")
-        label_path = os.path.join(self.res_path, "origin_label")
-        if not os.path.exists(origin_path):
-            os.makedirs(origin_path)
-        if not os.path.exists(label_path):
-            os.makedirs(label_path)
-        with open(os.path.join(origin_path, str(idx)), "wb") as fout:
+        with open(os.path.join(self.origin_path, str(idx)), "wb") as fout:
             fout.write(imgs.tostring())
-        with open(os.path.join(label_path, str(idx)), "wb") as fout:
+        with open(os.path.join(self.label_path, str(idx)), "wb") as fout:
             fout.write(ys.tostring())
 
     def run(self):
@@ -89,6 +99,7 @@ class RandomText:
 
         batches = self.output_num // self.batch_size + 1
         img_size = self.img.size
+        image_idx = 0
         for batch in tqdm.tqdm(range(batches)):
             data_len = min(self.output_num - self.batch_size * batch, self.batch_size)
             if data_len == 0:
@@ -101,15 +112,22 @@ class RandomText:
                 size = img.size
                 y = np.zeros(img.size)
                 text_list = self.str_generate()
+                bb = []
                 for idx, (text, xy, fontsize) in enumerate(zip(text_list, self.location_list, self.fontsize_list)):
-                    img, y = self.draw_text(idx, img, y, font, text, xy, fontsize)
-                img.save("res.png")
+                    img, y, to_xy = self.draw_text(idx, img, y, font, text, xy, fontsize)
+                    bb.append((xy, to_xy, idx))
+                #img.save("res.png")
+                img.save(os.path.join(self.png_path, "{}.png".format(image_idx)))
+                import pickle
+                with open(os.path.join(self.bb_path, "{}.pkl".format(image_idx)),'wb') as fout:
+                    pickle.dump(bb, fout)
                 map_img = np.clip(y.transpose() * (255 / len(self.location_list)), 0, 255).astype(np.uint8)
                 heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
-                cv2.imwrite("label.png", heatmap_img)
+                #cv2.imwrite("label.png", heatmap_img)
 
                 imgs[_] = np.asarray(img)
                 ys[_] = cv2.resize(y.transpose(), (self.width // 2, self.height //2))
+                image_idx +=1
             self.save(imgs, ys, batch)
 
 
