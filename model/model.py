@@ -25,7 +25,6 @@ def accuracy(y_true, y_pred):
 def recall(y_true, y_pred):
     positive = (y_true > 0)
     total = positive.sum().item()
-    print("total ", total)
     correct = (positive == (y_true == y_pred)).sum().item()
     return correct / total        
 
@@ -122,7 +121,7 @@ class Model(nn.Module):
 
         init_weights(self.conv.modules())
         init_weights(self.conv1.modules())
-        #init_weights(self.conv2.modules())
+        init_weights(self.conv2.modules())
         init_weights(self.conv_cls.modules())
 
     def forward(self, x):
