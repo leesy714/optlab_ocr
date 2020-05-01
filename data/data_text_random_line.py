@@ -127,8 +127,6 @@ class RandomText:
 
                 imgs[_] = np.asarray(img)
                 ys[_] = cv2.resize(y.transpose(), (self.width // 2, self.height //2))
-                break
-            break
             self.save(imgs, ys, batch)
 
 
@@ -356,7 +354,7 @@ if __name__=='__main__':
     #################### 생성할 data에 따라 format.png 수정 ######################
 
     random_text = RandomText("sample1.png", text_type_lists, location_lists,
-                             fontsize_lists, output_num=8, batch_size=4)
+                             fontsize_lists, output_num=4000, batch_size=4)
     img = random_text.run()
 
 
