@@ -11,15 +11,19 @@ class Curve(Shift):
 
     1. 가로 말림
     (약)
-    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png" is_horizon=True flexure=0.1
+    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png"
+        --is_horizon=True --flexure=0.1
     (강)
-    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png" is_horizon=True flexure=0.2
+    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png"
+        --is_horizon=True --flexure=0.2
 
     2. 세로 말림
     (약)
-    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png" is_horizon=False flexure=0.1
+    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png"
+        --is_horizon=False --flexure=0.1
     (강)
-    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png" is_horizon=False flexure=0.2
+    $> python curve.py --width=960 --height=1280 --channel=3 --ipt="sample.png"
+        --is_horizon=False --flexure=0.2
 
     """
 
