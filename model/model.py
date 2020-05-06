@@ -1,15 +1,32 @@
 import os
+import json
+import fire
 import cv2
 import numpy as np
 import torch
 from torch import nn
 import torch.nn.init as init
 import torch.nn.functional as F
-from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader, random_split
+from tqdm import tqdm
+import logging
+
+from focal_loss import FocalLoss
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+
+def accuracy(y_true, y_pred):
+    total = y_true.size(0)
+    correct = (y_true == y_pred).sum().item()
+    return correct / total        
+
+def recall(y_true, y_pred):
+    positive = (y_true > 0)
+    total = positive.sum().item()
+    correct = (positive == (y_true == y_pred)).sum().item()
+    return correct / total        
 
 class Data(Dataset):
 
@@ -23,13 +40,14 @@ class Data(Dataset):
         self.data_len = x.shape[0]
 
     def load(self):
-        base_dir = "/data/origin_noise"
-        ipt_dir = "/data/origin_craft"
-        opt_dir = "/data/origin_noise_label"
+        base_dir = "../data/imgs/origin_noise"
+        ipt_dir = "../data/imgs/origin_craft"
+        opt_dir = "../data/imgs/origin_noise_label"
         file_list = os.listdir(ipt_dir)
         assert len(file_list) == len(os.listdir(opt_dir)) == len(os.listdir(base_dir))
         total_imgs, total_ys, total_bases = [], [], []
-        for idx in file_list:
+        print("start data loading")
+        for idx in tqdm(file_list):
             bases = np.fromstring(open(os.path.join(base_dir, idx), "rb").read(), dtype=np.uint8)
             imgs = np.fromstring(open(os.path.join(ipt_dir, idx), "rb").read(), dtype=np.float32)
             ys = np.fromstring(open(os.path.join(opt_dir, idx), "rb").read(), dtype=np.uint8)
@@ -92,32 +110,36 @@ class Model(nn.Module):
             nn.ReLU(inplace=True)
         )
         self.conv1 = double_conv(4, 8, 16)
+        self.conv2 = double_conv(16, 32, 64)
 
 
         self.conv_cls = nn.Sequential(
-            nn.Conv2d(16, 16, kernel_size=7, padding=3), nn.ReLU(inplace=True),
+            nn.Conv2d(64, 32, kernel_size=7, padding=3), nn.ReLU(inplace=True),
+            nn.Conv2d(32, 16, kernel_size=7, padding=3), nn.ReLU(inplace=True),
             nn.Conv2d(16, classes + 1, kernel_size=1),
         )
 
         init_weights(self.conv.modules())
         init_weights(self.conv1.modules())
-        #init_weights(self.conv2.modules())
+        init_weights(self.conv2.modules())
         init_weights(self.conv_cls.modules())
 
     def forward(self, x):
         y = self.conv(x)
         feature = self.conv1(y)
+        feature = self.conv2(feature)
         y = self.conv_cls(feature)
 
         return y, feature
 
 class Train:
 
-    def __init__(self, classes, batch_size=4, epochs=10):
+    def __init__(self, classes, batch_size=4, loss_gamma=0, epochs=10):
         self.classes = classes
         self.epochs =  epochs
         self.learning_rate = 0.005
         self.data = Data(self.classes)
+        self.loss_gamma = loss_gamma
 
         data_len = len(self.data)
         self.train_num = int(data_len * 0.8)
@@ -156,14 +178,25 @@ class Train:
         self.model.eval()
         total_loss = torch.Tensor([0])
 
+        accs, recs = [] ,[]
         for batch, (imgs, ys, _) in enumerate(iterator):
             imgs = imgs.to(device)
             ys = ys.to(device)
             pred, _ = self.model(imgs)
             loss = loss_func(pred, ys)
             total_loss += loss.item()
-        total_loss /= len(iterator)
-        return total_loss[0]
+            pred = pred.permute(0, 2, 3, 1)
+            _, argmax = pred.max(dim=3)
+            acc = accuracy(ys.view(-1, 1), argmax.view(-1, 1))
+            rec = recall(ys.view(-1, 1), argmax.view(-1, 1))
+            accs.append(acc)
+            recs.append(rec)
+        acc = sum(accs) / len(accs)
+        rec = sum(recs) / len(recs)
+        print("acc: {}, recall: {}".format(acc, rec))
+
+        total_loss /= (self.vali_num)
+        return total_loss[0], acc, rec
 
     def test(self):
         self.model.eval()
@@ -192,21 +225,31 @@ class Train:
     def count_parameters(self):
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
+    def save(self, res):
+        with open("res/{}.json".format(self.loss_gamma), "w") as fout:
+            json.dump(res, fout)
+
     def run(self):
-        loss_func = nn.CrossEntropyLoss()
+        #loss_func = nn.CrossEntropyLoss()
+        loss_func = FocalLoss(gamma=self.loss_gamma)
         optimizer = torch.optim.Adam(self.model.parameters(),
                                      lr=self.learning_rate,
                                      weight_decay=0)
         print(self.model)
         print("parameters: ",self.count_parameters())
+        res = {}
         tot_vali_loss = np.inf
         for epoch in range(self.epochs):
             train_loss = self.train(epoch, loss_func, optimizer)
-            vali_loss = self.validate(epoch, self.vali_loader, loss_func)
-            print("train loss: {:.4} vali loss: {:.4}".format(train_loss, vali_loss))
+            vali_loss, acc, rec = self.validate(epoch, self.vali_loader, loss_func)
+            res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
+                              accuracy=float(acc), recall=float(rec))
+            print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}".format(train_loss, vali_loss, rec))
+        self.save(res)
         self.test()
 
 if __name__ == "__main__":
-    train = Train(classes=9, epochs=30, batch_size=8)
-    train.run()
+    for gamma in [0.0, 0.5, 1.0, 2.0, 5.0]:
+        train = Train(classes=9, epochs=40, batch_size=8, loss_gamma=gamma)
+        train.run()
 
