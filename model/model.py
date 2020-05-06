@@ -14,7 +14,7 @@ import logging
 from focal_loss import FocalLoss
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def accuracy(y_true, y_pred):
@@ -27,6 +27,13 @@ def recall(y_true, y_pred):
     total = positive.sum().item()
     correct = (positive == (y_true == y_pred)).sum().item()
     return correct / total        
+
+def precision(y_true, y_pred):
+    positive = (y_pred > 0)
+    total = positive.sum().item()
+    correct = (positive == (y_true == y_pred)).sum().item()
+    return correct / total        
+
 
 class Data(Dataset):
 
@@ -178,7 +185,7 @@ class Train:
         self.model.eval()
         total_loss = torch.Tensor([0])
 
-        accs, recs = [] ,[]
+        accs, recs, pres = [] ,[], []
         for batch, (imgs, ys, _) in enumerate(iterator):
             imgs = imgs.to(device)
             ys = ys.to(device)
@@ -189,14 +196,17 @@ class Train:
             _, argmax = pred.max(dim=3)
             acc = accuracy(ys.view(-1, 1), argmax.view(-1, 1))
             rec = recall(ys.view(-1, 1), argmax.view(-1, 1))
+            pre = precision(ys.view(-1, 1), argmax.view(-1, 1))
             accs.append(acc)
             recs.append(rec)
+            pres.append(pre)
         acc = sum(accs) / len(accs)
         rec = sum(recs) / len(recs)
-        print("acc: {}, recall: {}".format(acc, rec))
+        pre = sum(pres) / len(pres)
+        print("acc: {}, recall: {}, precision".format(acc, rec, pre))
 
         total_loss /= (self.vali_num)
-        return total_loss[0], acc, rec
+        return total_loss[0], acc, rec, pre
 
     def test(self):
         self.model.eval()
@@ -231,7 +241,9 @@ class Train:
 
     def run(self):
         #loss_func = nn.CrossEntropyLoss()
-        loss_func = FocalLoss(gamma=self.loss_gamma)
+        alpha = [0.75 for _ in range(self.classes)]
+        alpha[0] = 0.25
+        loss_func = FocalLoss(gamma=self.loss_gamma, alpha=alpha)
         optimizer = torch.optim.Adam(self.model.parameters(),
                                      lr=self.learning_rate,
                                      weight_decay=0)
@@ -241,15 +253,17 @@ class Train:
         tot_vali_loss = np.inf
         for epoch in range(self.epochs):
             train_loss = self.train(epoch, loss_func, optimizer)
-            vali_loss, acc, rec = self.validate(epoch, self.vali_loader, loss_func)
+            vali_loss, acc, rec, pre = self.validate(epoch, self.vali_loader, loss_func)
             res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
-                              accuracy=float(acc), recall=float(rec))
+                              accuracy=float(acc), recall=float(rec), precision=float(pre))
             print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}".format(train_loss, vali_loss, rec))
-        self.save(res)
+        if not os.path.exists("weight"):
+            os.makedirs("weight")        
+        #self.save(res)
+        torch.save(self.model.cpu().state_dict(), os.path.join("weight", "fully_connected.pt"))
         self.test()
 
 if __name__ == "__main__":
-    for gamma in [0.0, 0.5, 1.0, 2.0, 5.0]:
-        train = Train(classes=9, epochs=40, batch_size=8, loss_gamma=gamma)
-        train.run()
+    train = Train(classes=9, epochs=40, batch_size=8, loss_gamma=0.8)
+    train.run()
 
