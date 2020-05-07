@@ -10,7 +10,7 @@ class RandomText:
 
     def __init__(self, format_path, text_type_list, location_list, fontsize_list,
                  output_num=1, batch_size=256, width=960, height=1280,
-                 res_path="imgs"):
+                 res_path="imgs", save_img=True):
 
 
         self.text_type_list = text_type_list
@@ -29,6 +29,10 @@ class RandomText:
         self.res_path = res_path
         if not os.path.exists(res_path):
             os.makedirs(res_path)
+        self.save_img = save_img
+        if self.save_img:
+            print("save each image files with jpg format")
+            self.batch_size = 1
 
     def str_generate(self):
         text_list = []
@@ -79,10 +83,14 @@ class RandomText:
             os.makedirs(origin_path)
         if not os.path.exists(label_path):
             os.makedirs(label_path)
-        with open(os.path.join(origin_path, str(idx)), "wb") as fout:
-            fout.write(imgs.tostring())
-        with open(os.path.join(label_path, str(idx)), "wb") as fout:
-            fout.write(ys.tostring())
+        if self.save_img:
+            cv2.imwrite(os.path.join(origin_path, "{}.jpg".format(idx)), imgs[0])
+            np.save(os.path.join(label_path, "{}.npy".format(idx)),  ys[0])
+        else:
+            with open(os.path.join(origin_path, str(idx)), "wb") as fout:
+                fout.write(imgs.tostring())
+            with open(os.path.join(label_path, str(idx)), "wb") as fout:
+                fout.write(ys.tostring())
 
     def run(self):
         font = 'fonts/NanumGothic.ttf'
@@ -103,10 +111,10 @@ class RandomText:
                 text_list = self.str_generate()
                 for idx, (text, xy, fontsize) in enumerate(zip(text_list, self.location_list, self.fontsize_list)):
                     img, y = self.draw_text(idx, img, y, font, text, xy, fontsize)
-                img.save("res.png")
-                map_img = np.clip(y.transpose() * (255 / len(self.location_list)), 0, 255).astype(np.uint8)
-                heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
-                cv2.imwrite("label.png", heatmap_img)
+                #img.save("res.png")
+                #map_img = np.clip(y.transpose() * (255 / len(self.location_list)), 0, 255).astype(np.uint8)
+                #heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
+                #cv2.imwrite("label.png", heatmap_img)
 
                 imgs[_] = np.asarray(img)
                 ys[_] = cv2.resize(y.transpose(), (self.width // 2, self.height //2))
@@ -148,7 +156,7 @@ if __name__=='__main__':
     #******************************************************************
 
 
-    random_text = RandomText("./format.png", text_type_list, location_list,
+    random_text = RandomText("./report.png", text_type_list, location_list,
                              fontsize_list, output_num=8, batch_size=4)
     img = random_text.run()
 
