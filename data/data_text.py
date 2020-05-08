@@ -183,12 +183,10 @@ class RandomLine(RandomText):
                 img, y, box = self.draw_text(idx, img, y, font, text, xy, fontsize)
                 bbox.append(box)
 
-            img.save("res_"+str(gen_num)+".png")
-            #map_img = np.clip(y.transpose() * (255 / len(location_list)), 0, 255).astype(np.uint8)
-            map_img = np.clip(y.transpose() * (255 / 9), 0, 255).astype(np.uint8)
-            heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
-            cv2.imwrite("label.png", heatmap_img)
-            print(bbox)
+            #img.save("res_"+str(gen_num)+".png")
+            #map_img = np.clip(y.transpose() * (255 / 9), 0, 255).astype(np.uint8)
+            #heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
+            #cv2.imwrite("label.png", heatmap_img)
 
             img = np.asarray(img)
             self.save(img, y, bbox, opt)
@@ -453,7 +451,7 @@ def main_random():
     #################### 생성할 data에 따라 format.png 수정 ######################
 
     random_text = RandomLine("sample1.png", text_type_lists, location_lists,
-                             fontsize_lists, output_num=1)
+                             fontsize_lists, output_num=10)
     img = random_text.run()
 
 if __name__=='__main__':

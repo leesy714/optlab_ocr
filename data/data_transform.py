@@ -2,6 +2,7 @@ import os
 import sys
 import tqdm
 import random
+import pickle
 import numpy as np
 from os.path import join as pjoin
 from PIL import Image, ImageDraw, ImageFont
@@ -15,19 +16,26 @@ class Pipeline:
     def __init__(self, width=960, height=1280, res_path="imgs"):
         self.width = width
         self.height = height
-
         self.res_path = res_path
+
+        self.img_postfix = ".jpg"
+        self.y_postfix = ".npy"
+        self.bbox_postfix = ".pickle"
 
     def load_files(self):
         origin_file_list = os.listdir(pjoin(self.res_path, "origin"))
         label_file_list = os.listdir(pjoin(self.res_path, "origin_label"))
-        assert len(origin_file_list) == len(label_file_list)
+        bbox_file_list = os.listdir(pjoin(self.res_path, "origin_bbox"))
+        assert len(origin_file_list) == len(label_file_list) == len(bbox_file_list)
         return origin_file_list
 
     def load_np(self, idx):
-        imgs = np.fromstring(open(pjoin(self.res_path, "origin", idx), "rb").read(), dtype=np.uint8)
-        ys = np.fromstring(open(pjoin(self.res_path, "origin_label", idx), "rb").read(), dtype=np.uint8)
-        return imgs.reshape(-1, self.height, self.width, 3), ys.reshape(-1, self.height // 2, self.width // 2)
+        idx = str(idx)
+        img = cv2.imread(pjoin(self.res_path, "origin", idx+self.img_postfix), cv2.IMREAD_COLOR)
+        y = np.load(pjoin(self.res_path, "origin_label", idx+self.y_postfix))
+        with open(pjoin(self.res_path, "origin_bbox", idx+self.bbox_postfix), 'rb') as fin:
+            bbox = pickle.load(fin)
+        return img.reshape(self.height, self.width, 3), y.transpose(1, 0), bbox
 
     def bw_global(self, img_gray):
         i = random.randint(0, 2) # global binarization
@@ -92,7 +100,6 @@ class Pipeline:
 
         coords = [np.random.randint(0, i - 1, int(num_salt))
               for i in img_arr.shape[:2]]
-
         out[coords] = 1
 
         # Pepper mode
@@ -104,13 +111,9 @@ class Pipeline:
 
 
     def line_pepper(self, img, num_lines=2):
-        #img = img.convert('RGB')
-
         img_arr = np.array(img)
         row,col,ch = img_arr.shape
         out = np.copy(img_arr)
-
-
         coords = np.random.randint(0, col - 1, num_lines)
         for c in coords:
             out[:,c]=1
@@ -140,53 +143,56 @@ class Pipeline:
                 raise
         return img
 
-    def transform(self, imgs, ys):
-        assert imgs.shape[0] == ys.shape[0]
-        batch = imgs.shape[0]
-        for b in range(batch):
+    def transform(self, img, y, bbox):
+        img = self.noise_generate(img.copy())
+        mode = random.randint(0, 3)
+        if mode % 2 == 0:
+            curve_random = random.randint(5, 20)
+            curve_mode = "down" if random.randint(0, 1) > 0 else "up"
+            tran = Curve(width=self.width, height=self.height, spacing=40,
+                         flexure=curve_random/100, direction=curve_mode,
+                         is_horizon=(mode%4==0))
+        else:
+            folded_up = random.randint(5, 20)
+            folded_down = random.randint(5, 20)
+            tran = Folded(width=self.width, height=self.height, spacing=40,
+                          up_slope=folded_up/100, down_slope=folded_down/100,
+                          is_horizon=(mode%4==1))
+        img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
+        y = cv2.resize(y, (self.width, self.height))
+        y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
+        y = cv2.resize(y, (self.width // 2, self.height // 2))
+        y = y.transpose(1, 0).astype(np.uint8)
+        points = []
+        for x1, y1, x2, y2 in bbox:
+            points.append((x1, y1))
+            points.append((x2, y2))
+        bbox = tran.transform_points(points)
+        bbox = [(*bbox[2*i], *bbox[2*i+1]) for i in range(len(bbox)//2)]
+        #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
+        #cv2.imwrite("label_curved.png", heatmap_img)
+        #cv2.imwrite("origin_curved_1_{}.png".format(b), imgs[b])
+        return img, y, bbox
 
-            imgs[b] = self.noise_generate(imgs[b].copy())
-
-            if b % 2 == 0:
-                curve_random = random.randint(5, 20)
-                curve_mode = "down" if curve_random > 10 else "up"
-                tran = Curve(width=self.width, height=self.height, spacing=100,
-                          flexure=curve_random/100, direction=curve_mode)
-            else:
-                folded_up = random.randint(5, 20)
-                folded_down = random.randint(5, 20)
-                tran = Folded(width=self.width, height=self.height, spacing=100,
-                              up_slope=folded_up/100, down_slope=folded_down/100)
-            imgs[b] = tran.run(3, imgs[b], ipt_format="opencv", opt_format="opencv")
-            y = tran.run(1, cv2.resize(ys[b], (self.width, self.height)).reshape(self.height, self.width, 1),
-                         ipt_format="opencv", opt_format="opencv")
-            ys[b] = cv2.resize(y, (self.width // 2, self.height // 2))
-
-            # 이미지 파일로 확인하기 위한 코드
-            #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
-            #cv2.imwrite("label_curved.png", heatmap_img)
-            #cv2.imwrite("origin_curved_1_{}.png".format(b), imgs[b])
-
-        return imgs, ys
-
-    def save(self, imgs, ys, idx=0):
+    def save(self, img, y, bbox, idx=0):
+        idx = str(idx)
         origin_path = pjoin(self.res_path, "origin_noise")
         label_path = pjoin(self.res_path, "origin_noise_label")
-        if not os.path.exists(origin_path):
-            os.makedirs(origin_path)
-        if not os.path.exists(label_path):
-            os.makedirs(label_path)
-        with open(os.path.join(origin_path, str(idx)), "wb") as fout:
-            fout.write(imgs.tostring())
-        with open(os.path.join(label_path, str(idx)), "wb") as fout:
-            fout.write(ys.tostring())
+        bbox_path = pjoin(self.res_path, "origin_noise_bbox")
+        for path in [origin_path, label_path, bbox_path]:
+            if not os.path.exists(path):
+                os.makedirs(path)
+        cv2.imwrite(pjoin(origin_path, idx+self.img_postfix), img)
+        np.save(pjoin(label_path, idx+self.y_postfix),  y)
+        with open(pjoin(bbox_path, idx+self.bbox_postfix), 'wb') as fout:
+            pickle.dump(bbox, fout)
 
     def run(self):
-
-        for batch in tqdm.tqdm(self.load_files()):
-            imgs, ys = self.load_np(batch)
-            imgs, ys = self.transform(imgs, ys)
-            self.save(imgs, ys, batch)
+        for file_name in tqdm.tqdm(self.load_files()):
+            idx = file_name.split(".")[0]
+            img, y, bbox = self.load_np(idx)
+            img, y, bbox = self.transform(img, y, bbox)
+            self.save(img, y, bbox, idx)
 
 
 if __name__ == "__main__":
