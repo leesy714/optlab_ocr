@@ -106,7 +106,6 @@ def test_inference(net, image):
     return y.cpu().data.numpy()
 
 
-
 def inference(width=1280, height=960, res_path="imgs"):
     # load net
     net = CRAFT()
@@ -127,15 +126,14 @@ def inference(width=1280, height=960, res_path="imgs"):
     output_path = os.path.join(res_path, "origin_craft")
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-        
-    origin_file_list = os.listdir(os.path.join(res_path, "origin_noise"))
-    for batch in tqdm(origin_file_list):
-        imgs = np.fromstring(open(os.path.join(res_path, "origin_noise", batch), "rb").read(), dtype=np.uint8)
-        imgs = imgs.reshape(-1, 1280, 960, 3)
-        res = test_inference(net, imgs)
 
-        with open(os.path.join(output_path, str(batch)), "wb") as fout:
-            fout.write(res.tostring())
+    origin_file_list = os.listdir(os.path.join(res_path, "origin_noise"))
+    for img in tqdm(origin_file_list):
+        image = cv2.imread(os.path.join(res_path, "origin_noise", img))
+        image = image.reshape(1, 1280, 960, 3)
+        res = test_inference(net, image)
+
+        np.save(os.path.join(output_path, img.replace(".jpg", ".npy"), res.squeeze())
 
 if __name__ == '__main__':
     inference()
