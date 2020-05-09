@@ -23,6 +23,8 @@ import json
 from craft import CRAFT
 
 from collections import OrderedDict
+
+
 def copyStateDict(state_dict):
     if list(state_dict.keys())[0].startswith("module"):
         start_idx = 1
@@ -106,7 +108,7 @@ def test_inference(net, image):
     return y.cpu().data.numpy()
 
 
-def inference(width=1280, height=960, res_path="imgs"):
+def inference(width=960, height=1280, res_path="imgs"):
     # load net
     net = CRAFT()
 
@@ -130,10 +132,10 @@ def inference(width=1280, height=960, res_path="imgs"):
     origin_file_list = os.listdir(os.path.join(res_path, "origin_noise"))
     for img in tqdm(origin_file_list):
         image = cv2.imread(os.path.join(res_path, "origin_noise", img))
-        image = image.reshape(1, 1280, 960, 3)
+        image = image.reshape(1, height, width, 3)
         res = test_inference(net, image)
-
-        np.save(os.path.join(output_path, img.replace(".jpg", ".npy"), res.squeeze())
+        res = res.squeeze()
+        np.save(os.path.join(output_path, img.replace(".jpg", ".npy")), res)
 
 if __name__ == '__main__':
     inference()
