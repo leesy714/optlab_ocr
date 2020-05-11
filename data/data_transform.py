@@ -229,14 +229,15 @@ class Pipeline:
         y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
         y = cv2.resize(y, (self.width // 2, self.height // 2))
         y = y.transpose(1, 0).astype(np.uint8)
-        points = []
-        for x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
+        points, labels = [], []
+        for idx, x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
             points.append((x1, y1))
             points.append((x2, y2))
             points.append((x3, y3))
             points.append((x4, y4))
+            labels.append(idx)
         bbox = tran.transform_points(points)
-        bbox = [(*bbox[4*i], *bbox[4*i+1], *bbox[4*i+2], *bbox[4*i+3]) for i in range(len(bbox)//4)]
+        bbox = [(labels[i], *bbox[4*i], *bbox[4*i+1], *bbox[4*i+2], *bbox[4*i+3]) for i in range(len(bbox)//4)]
         #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
         #cv2.imwrite("label_curved.png", heatmap_img)
         #cv2.imwrite("origin_curved_1_{}.png".format(b), imgs[b])
