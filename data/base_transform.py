@@ -78,6 +78,8 @@ class Shift(Transform):
         """
         if not isinstance(points, list):
             points = [points]
+        if not self.is_horizon:
+            points = [(y, x) for x, y in points]
         t_points = []
         widths, heights = self.get_transform()
         for point in points:
@@ -97,6 +99,8 @@ class Shift(Transform):
             point = np.array((*point, 1))
             t_point = np.dot(mat, point)
             t_points.append((int(t_point[0]), int(t_point[1])))
+        if not self.is_horizon:
+            t_points = [(y, x) for x, y in t_points]
         return t_points
 
     def run(self, channel, ipt, ipt_format="file", opt="res.png", opt_format="file"):
@@ -106,7 +110,7 @@ class Shift(Transform):
 
         self.origin = cv2.resize(self.origin, dsize=(self.width, self.height) if self.is_horizon else (self.height, self.width))
         if not self.is_horizon:
-            self.origin = self.origin.transpose(1, 0, 2)
+            self.origin = self.origin.transpose(1, 0, 2) if channel > 1 else self.origin.transpose(1, 0)
         if self.verbose:
             print("origin", self.origin.shape)
 
@@ -135,5 +139,5 @@ class Shift(Transform):
                 output[height: height + self.spacing, width:width + self.spacing] = warp[height: height + self.spacing, width:width+self.spacing]
 
         if not self.is_horizon:
-            output = output.transpose(1, 0, 2)
+            output = output.transpose(1, 0, 2) if channel > 1 else output.transpose(1, 0)
         return self.save(output, opt, opt_format)
