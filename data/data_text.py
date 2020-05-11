@@ -11,12 +11,7 @@ import cv2
 class RandomText:
 
     def __init__(self, format_path, text_type_list, location_list, fontsize_list,
-#<<<<<<< HEAD
-#                 output_num=1, batch_size=256, width=960, height=1280,
-#                 res_path="/home/leesy714/data/ocr/imgs"):
-#=======
                  output_num=1, width=960, height=1280, res_path="imgs"):
-#>>>>>>> a9eddc184b1ec1770d40389eebcf3ab5bf9e26eb
 
 
         self.text_type_list = text_type_list
@@ -86,24 +81,12 @@ class RandomText:
         #print(text, font.getsize(text))
         font_size = font.getsize(text)
         to_xy = (xy[0] + font_size[0], xy[1] + font_size[1])
-#<<<<<<< HEAD
-#        y[xy[0]: to_xy[0], xy[1]: to_xy[1]] = idx
-#
-#        draw = ImageDraw.Draw(img)
-#        draw.text(xy, text, font=font, fill="black")
-#        return img, y, to_xy
-#
-#    def save(self, imgs, ys, idx=0):
-#        with open(os.path.join(self.origin_path, str(idx)), "wb") as fout:
-#            fout.write(imgs.tostring())
-#        with open(os.path.join(self.label_path, str(idx)), "wb") as fout:
-#            fout.write(ys.tostring())
-#=======
-
+        ld_xy = (xy[0], xy[1] + font_size[1])
+        ru_xy = (xy[0] + font_size[0], xy[1])
         y[xy[0]//2: to_xy[0]//2, xy[1]//2: to_xy[1]//2] = idx
         draw = ImageDraw.Draw(img)
         draw.text(xy, text, font=font, fill="black")
-        return img, y, (*xy, *to_xy)
+        return img, y, (*xy, *ld_xy, *to_xy, *ru_xy)
 
     def save(self, img, y, bbox, idx=0):
         origin_path = os.path.join(self.res_path, "origin")
@@ -116,44 +99,11 @@ class RandomText:
         np.save(os.path.join(label_path, "{}.npy".format(idx)),  y)
         with open(os.path.join(bbox_path, "{}.pickle".format(idx)), 'wb') as fout:
             pickle.dump(bbox, fout)
-#>>>>>>> a9eddc184b1ec1770d40389eebcf3ab5bf9e26eb
 
     def run(self):
         font = 'fonts/NanumGothic.ttf'
 
         img_size = self.img.size
-#<<<<<<< HEAD
-#        image_idx = 0
-#        for batch in tqdm.tqdm(range(batches)):
-#            data_len = min(self.output_num - self.batch_size * batch, self.batch_size)
-#            if data_len == 0:
-#                continue
-#            imgs = np.zeros((data_len, img_size[1], img_size[0], 3), dtype=np.uint8)
-#            ys = np.empty((data_len, img_size[1] // 2, img_size[0] // 2), dtype=np.uint8)
-#
-#            for _ in range(data_len):
-#                img = self.img.copy()
-#                size = img.size
-#                y = np.zeros(img.size)
-#                text_list = self.str_generate()
-#                bb = []
-#                for idx, (text, xy, fontsize) in enumerate(zip(text_list, self.location_list, self.fontsize_list)):
-#                    img, y, to_xy = self.draw_text(idx, img, y, font, text, xy, fontsize)
-#                    bb.append((xy, to_xy, idx))
-#                #img.save("res.png")
-#                img.save(os.path.join(self.png_path, "{:06d}.jpg".format(image_idx)))
-#                import pickle
-#                with open(os.path.join(self.bb_path, "{:06d}.pkl".format(image_idx)),'wb') as fout:
-#                    pickle.dump(bb, fout)
-#                map_img = np.clip(y.transpose() * (255 / len(self.location_list)), 0, 255).astype(np.uint8)
-#                heatmap_img = cv2.applyColorMap(map_img, cv2.COLORMAP_JET)
-#                #cv2.imwrite("label.png", heatmap_img)
-#
-#                imgs[_] = np.asarray(img)
-#                ys[_] = cv2.resize(y.transpose(), (self.width // 2, self.height //2))
-#                image_idx +=1
-#            self.save(imgs, ys, batch)
-#=======
         for opt in tqdm.tqdm(range(self.output_num)):
             img = np.zeros((img_size[1], img_size[0], 3), dtype=np.uint8)
             y = np.zeros((img_size[0] // 2, img_size[1] // 2), dtype=np.uint8)
@@ -175,7 +125,6 @@ class RandomLine(RandomText):
 
     def __init__(self, format_path, text_type_lists, location_lists, fontsize_lists,
                  output_num=1, width=960, height=1280, res_path="imgs"):
-#>>>>>>> a9eddc184b1ec1770d40389eebcf3ab5bf9e26eb
 
         self.output_num = output_num
         self.img = Image.open(format_path).convert("RGB")
@@ -293,10 +242,6 @@ def main_simple():
     #******************************************************************
 
 
-#<<<<<<< HEAD
-#    random_text = RandomText("./format.png", text_type_list, location_list,
-#                             fontsize_list, output_num=10000, batch_size=4)
-#=======
     random_text = RandomText("./report.png", text_type_list, location_list,
                              fontsize_list, output_num=1)
     img = random_text.run()
@@ -523,7 +468,6 @@ def main_random():
 
     random_text = RandomLine("sample1.png", text_type_lists, location_lists,
                              fontsize_lists, output_num=10)
-#>>>>>>> a9eddc184b1ec1770d40389eebcf3ab5bf9e26eb
     img = random_text.run()
 
 if __name__=='__main__':
