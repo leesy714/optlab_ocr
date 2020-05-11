@@ -71,7 +71,7 @@ class RandomText:
         y[xy[0]//2: to_xy[0]//2, xy[1]//2: to_xy[1]//2] = idx
         draw = ImageDraw.Draw(img)
         draw.text(xy, text, font=font, fill="black")
-        return img, y, (*xy, *ld_xy, *to_xy, *ru_xy)
+        return img, y, (idx, *xy, *ld_xy, *to_xy, *ru_xy)
 
     def save(self, img, y, bbox, idx=0):
         origin_path = os.path.join(self.res_path, "origin")
