@@ -3,6 +3,7 @@ import json
 import fire
 import cv2
 import numpy as np
+import pickle
 import torch
 from torch import nn
 import torch.nn.init as init
@@ -14,62 +15,53 @@ import logging
 from focal_loss import FocalLoss
 
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
 
 
 def accuracy(y_true, y_pred):
     total = y_true.size(0)
     correct = (y_true == y_pred).sum().item()
-    return correct / total        
+    return correct / (total + 1e-8)
 
 def recall(y_true, y_pred):
     positive = (y_true > 0)
     total = positive.sum().item()
-    correct = (positive == (y_true == y_pred)).sum().item()
-    return correct / total        
+    correct = (positive[y_true == y_pred]).sum().item()
+    return correct / (total + 1e-8)
 
 def precision(y_true, y_pred):
     positive = (y_pred > 0)
     total = positive.sum().item()
-    correct = (positive == (y_true == y_pred)).sum().item()
-    return correct / total        
+    correct = (positive[y_true == y_pred]).sum().item()
+    return correct / (total + 1e-8)
 
 
 class Data(Dataset):
 
-    def __init__(self, classes):
-        self.classes = classes
-        x, y, base = self.load()
-        print("data shape", x.shape, y.shape, base.shape)
-        self.x = x
-        self.y = y
-        self.base = base
-        self.data_len = x.shape[0]
+    def __init__(self):
+        #self.classes = classes
+        #x, y, base = self.load()
+        #print("data shape", x.shape, y.shape, base.shape)
+        #self.x = x
+        #self.y = y
+        #self.base = base
+        self.base_dir = "../data/imgs/origin_noise"
+        self.ipt_dir = "../data/imgs/origin_craft"
+        self.opt_dir = "../data/imgs/origin_noise_label"
+        assert len(os.listdir(self.ipt_dir)) == len(os.listdir(self.opt_dir)) == len(os.listdir(self.base_dir))
 
-    def load(self):
-        base_dir = "../data/imgs/origin_noise"
-        ipt_dir = "../data/imgs/origin_craft"
-        opt_dir = "../data/imgs/origin_noise_label"
-        file_list = os.listdir(ipt_dir)
-        assert len(file_list) == len(os.listdir(opt_dir)) == len(os.listdir(base_dir))
-        total_imgs, total_ys, total_bases = [], [], []
-        print("start data loading")
-        for idx in tqdm(file_list):
-            bases = np.fromstring(open(os.path.join(base_dir, idx), "rb").read(), dtype=np.uint8)
-            imgs = np.fromstring(open(os.path.join(ipt_dir, idx), "rb").read(), dtype=np.float32)
-            ys = np.fromstring(open(os.path.join(opt_dir, idx), "rb").read(), dtype=np.uint8)
-            imgs = imgs.reshape(-1, 640, 480, 1)
-            total_imgs.append(imgs)
-            total_ys.append(ys.reshape(-1, 640, 480))
-            total_bases.append(bases.reshape(-1, 1280, 960, 3))
-        total_imgs = np.concatenate(total_imgs)
-        total_ys = np.concatenate(total_ys)
-        total_bases = np.concatenate(total_bases)
-
-        return np.transpose(total_imgs, (0, 3, 1, 2)), total_ys.astype(np.int64), total_bases
+        self.data_len = len(os.listdir(self.ipt_dir))
+        self.data_len = 500
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y[idx], self.base[idx]
+        base = cv2.imread(os.path.join(self.base_dir, str(idx)+".jpg"))
+        x = np.load(os.path.join(self.ipt_dir, str(idx)+".npy"))
+        y = np.load(os.path.join(self.opt_dir, str(idx)+".npy"))
+        x = x.reshape(640, 480, 1)
+        x = x.transpose(2, 0, 1)
+        y = y.reshape(640, 480)
+        base = base.reshape(1280, 960, 3)
+        return x, y.astype(np.int64), base, idx
 
     def __len__(self):
         return self.data_len
@@ -141,12 +133,13 @@ class Model(nn.Module):
 
 class Train:
 
-    def __init__(self, classes, batch_size=4, loss_gamma=0, epochs=10):
+    def __init__(self, classes, batch_size=4, loss_gamma=0, loss_alpha=0.5, epochs=10):
         self.classes = classes
         self.epochs =  epochs
         self.learning_rate = 0.005
-        self.data = Data(self.classes)
+        self.data = Data()
         self.loss_gamma = loss_gamma
+        self.loss_alpha = loss_alpha
 
         data_len = len(self.data)
         self.train_num = int(data_len * 0.8)
@@ -167,7 +160,7 @@ class Train:
         pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
                     desc="({0:^3})".format(epoch))
 
-        for batch, (imgs, ys, _) in pbar:
+        for batch, (imgs, ys, _, idx) in pbar:
             imgs = imgs.to(device)
             ys = ys.to(device)
             optimizer.zero_grad()
@@ -186,9 +179,9 @@ class Train:
         total_loss = torch.Tensor([0])
 
         accs, recs, pres = [] ,[], []
-        for batch, (imgs, ys, _) in enumerate(iterator):
+        for batch, (imgs, ys, _, idx) in enumerate(iterator):
             imgs = imgs.to(device)
-            ys = ys.to(device)
+            ys = ys.to(device, dtype=torch.long)
             pred, _ = self.model(imgs)
             loss = loss_func(pred, ys)
             total_loss += loss.item()
@@ -203,15 +196,20 @@ class Train:
         acc = sum(accs) / len(accs)
         rec = sum(recs) / len(recs)
         pre = sum(pres) / len(pres)
-        print("acc: {}, recall: {}, precision".format(acc, rec, pre))
+        print("acc: {}, recall: {}, precision: {}".format(acc, rec, pre))
 
         total_loss /= (self.vali_num)
         return total_loss[0], acc, rec, pre
 
+    def load_bbox(self, file_num):
+        with open("../data/imgs/origin_noise_bbox/" + str(file_num) + ".pickle", "rb") as fin:
+            bbox = pickle.load(fin)
+        return bbox
+
     def test(self):
         self.model.eval()
 
-        for batch, (imgs, ys, bases) in enumerate(self.test_loader):
+        for batch, (imgs, ys, bases, file_num) in enumerate(self.test_loader):
             imgs = imgs.to(device)
             pred, _ = self.model(imgs)
             pred = pred.permute(0, 2, 3, 1)
@@ -222,6 +220,7 @@ class Train:
 
             bases = bases.squeeze().cpu().data.numpy()
             for idx in range(argmax.shape[0]):
+                bbox = self.load_bbox(int(file_num[idx]))
                 img = argmax[idx]
                 origin = np.clip(imgs[idx] * 255, 0, 255).astype(np.uint8)
                 img = np.clip(img*(255 / self.classes), 0, 255).astype(np.uint8)
@@ -236,13 +235,13 @@ class Train:
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
     def save(self, res):
-        with open("res/{}.json".format(self.loss_gamma), "w") as fout:
+        with open("res/{}-{}.json".format(self.loss_gamma, self.loss_alpha), "w") as fout:
             json.dump(res, fout)
 
     def run(self):
         #loss_func = nn.CrossEntropyLoss()
-        alpha = [0.75 for _ in range(self.classes)]
-        alpha[0] = 0.25
+        alpha = [1-self.loss_alpha for _ in range(self.classes + 1)]
+        alpha[0] = self.loss_alpha
         loss_func = FocalLoss(gamma=self.loss_gamma, alpha=alpha)
         optimizer = torch.optim.Adam(self.model.parameters(),
                                      lr=self.learning_rate,
@@ -258,12 +257,12 @@ class Train:
                               accuracy=float(acc), recall=float(rec), precision=float(pre))
             print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}".format(train_loss, vali_loss, rec))
         if not os.path.exists("weight"):
-            os.makedirs("weight")        
-        #self.save(res)
-        torch.save(self.model.cpu().state_dict(), os.path.join("weight", "fully_connected.pt"))
+            os.makedirs("weight")
         self.test()
+        self.save(res)
+        torch.save(self.model.cpu().state_dict(), os.path.join("weight", "fully_connected.pt"))
 
 if __name__ == "__main__":
-    train = Train(classes=9, epochs=40, batch_size=8, loss_gamma=0.8)
+    train = Train(classes=9, epochs=1, batch_size=8, loss_gamma=0.3, loss_alpha=0.25)
     train.run()
 
