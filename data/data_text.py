@@ -66,11 +66,12 @@ class RandomText:
         #print(text, font.getsize(text))
         font_size = font.getsize(text)
         to_xy = (xy[0] + font_size[0], xy[1] + font_size[1])
-
+        ld_xy = (xy[0], xy[1] + font_size[1])
+        ru_xy = (xy[0] + font_size[0], xy[1])
         y[xy[0]//2: to_xy[0]//2, xy[1]//2: to_xy[1]//2] = idx
         draw = ImageDraw.Draw(img)
         draw.text(xy, text, font=font, fill="black")
-        return img, y, (*xy, *to_xy)
+        return img, y, (idx, *xy, *ld_xy, *to_xy, *ru_xy)
 
     def save(self, img, y, bbox, idx=0):
         origin_path = os.path.join(self.res_path, "origin")
