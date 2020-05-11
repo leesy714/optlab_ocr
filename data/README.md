@@ -37,21 +37,30 @@ $ python craft_inference.py
   - All result file is saved with numpy array format in `imgs` folder. For the usage ...
 
 ```python
+import cv2
+import pickle
 import numpy as np
 
-imgs = np.fromstring(open("imgs/origin/0"), "rb").read(), dtype=np.uint8)
-imgs = imgs.reshape(-1, height, weight, 3)
+img = cv2.imread("imgs/origin/0.npy") # shape = (height, width, 3)
+y = np.load("imgs/origin_label/0.npy") # shape = (width / 2, height / 2)
+with open("imgs/origin_bbox/0.pickle", "rb") as fin:
+    bbox = pickle.load(fin) # list of bbox tuples
 ```
 
-  - After run the `data_text.py`, the images would be saved in `imgs/origin` with numpy array str, and the label of the images(also shape with full image) would be saved in `imgs/origin_label` with numpy array str.
+  - After run the `data_text.py`, the images would be saved in `imgs/origin` with each image files, and the label of the images would be saved in `imgs/origin_label` with numpy array.
+  - Also, bounding box data would be saved in `imgs/origin_bbox`.
+    - `imgs/origin`: All images are saved in .jpg format in `960*1280` size.
+    - `imgs/origin_label`: Label of all pixels in each images. Label of numpy array has just one channnel, so the shape of the label is (480, 640). Lable has half size of the origin image for the craft model.
+    - `imgs/origin_bbox`: All bounding box information of each images is saved with `pickle` object. Bounding boxes are shape with `[(x1, y1, x2, y2), ...]` that x1, y1 is upper left point of the box and x2, y2 is lower right point of the box.
 
 ### 2. noise generation
   - All noises effect will be generated in random.
-  - After run the `data_transform.py`, noised images would be saved in `imgs/origin_noise/` with numpy array str, and the label of the images(also shape with full image) would be saved in `imgs/origin_noise_label/` with numpy array str.
+  - After run the `data_transform.py`, noised images would be saved in `imgs/origin_noise/` with image file, and the label of the images would be saved in `imgs/origin_noise_label/`.
+  - Also, transformed bounding box data would be saved in `imgs/origin_noise_bbox`.
 
 
 ### 3. craft inference
   - Craft network inferences the text score and link score at once. We use the sum of the inferences.
   - Sum of the scores is [0, 1] float32 at (width/2, height/2) scale.
-  - After run the `craft_inference.py`, score numpy array would be saved in `imgs/origin_craft/` folder within batch scale.
+  - After run the `craft_inference.py`, score numpy array would be saved in `imgs/origin_craft/` folder.
 
