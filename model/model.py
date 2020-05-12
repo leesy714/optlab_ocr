@@ -50,7 +50,8 @@ def accuracy_bbox(y_true, y_pred, bboxes):
                 continue
             y_pred_box = torch.flatten(_y_pred[y_min:y_max, x_min:x_max])
             uniq2, counts = torch.unique(y_pred_box, return_counts=True)
-            acc.append(label == uniq2[0])
+            acc.append(int(uniq2[counts.argmax()]) == label)
+            #acc.append(label == uniq2[0])
     return sum(acc) / (len(acc) + 1e-8)
 
 class Data(Dataset):
@@ -75,7 +76,7 @@ class Data(Dataset):
         y = np.load(os.path.join(self.opt_dir, str(idx)+".npy"))
         x = x.reshape(640, 480, 1)
         x = x.transpose(2, 0, 1)
-        y = y.reshape(640, 480)
+        y = y.transpose(1, 0)
         base = base.reshape(1280, 960, 3)
         return x, y.astype(np.int64), base, idx
 
@@ -149,11 +150,13 @@ class Model(nn.Module):
 
 class Train:
 
-    def __init__(self, classes, batch_size=4, loss_gamma=0, loss_alpha=0.5, epochs=10):
+    def __init__(self, classes, batch_size=4, loss_gamma=0, loss_alpha=0.5,
+                 learning_rate=0.01, epochs=10):
         self.classes = classes
         self.epochs =  epochs
-        self.learning_rate = 0.005
+        self.learning_rate = 0.01
         self.data = Data()
+        self.batch_size = batch_size
         self.loss_gamma = loss_gamma
         self.loss_alpha = loss_alpha
 
@@ -187,7 +190,7 @@ class Train:
             batch_loss = loss.item()
             total_loss += batch_loss
             pbar.set_postfix(train_loss=batch_loss)
-        total_loss /= (self.train_num)
+        total_loss /= len(self.train_loader)
         return total_loss[0]
 
     def validate(self, epoch, iterator, loss_func):
@@ -218,7 +221,7 @@ class Train:
         pre = sum(pres) / len(pres)
         print("acc: {}, recall: {}, precision: {}, acc_bbox: {}".format(acc, rec, pre, acc_box))
 
-        total_loss /= (self.vali_num)
+        total_loss /= len(iterator)
         return total_loss[0], acc, rec, pre, acc_box
 
     def load_bbox(self, file_num):
