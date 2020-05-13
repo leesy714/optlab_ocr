@@ -145,36 +145,39 @@ class Pipeline:
 
     def transform(self, img, y, bbox):
         img = self.noise_generate(img.copy())
-        mode = random.randint(0, 3)
-        if mode % 2 == 0:
-            curve_random = random.randint(5, 20)
-            curve_mode = "down" if random.randint(0, 1) > 0 else "up"
-            tran = Curve(width=self.width, height=self.height, spacing=40,
-                         flexure=curve_random/100, direction=curve_mode,
-                         is_horizon=(mode%4==0))
-        else:
-            folded_up = random.randint(5, 20)
-            folded_down = random.randint(5, 20)
-            tran = Folded(width=self.width, height=self.height, spacing=40,
-                          up_slope=folded_up/100, down_slope=folded_down/100,
-                          is_horizon=(mode%4==1))
-        img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
-        y = cv2.resize(y, (self.width, self.height))
-        y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
-        y = cv2.resize(y, (self.width // 2, self.height // 2))
-        y = y.transpose(1, 0).astype(np.uint8)
-        points = []
-        for x1, y1, x2, y2 in bbox:
-            points.append((x1, y1))
-            points.append((x2, y2))
-        bbox = tran.transform_points(points)
-        bbox = [(*bbox[2*i], *bbox[2*i+1]) for i in range(len(bbox)//2)]
+#         mode = random.randint(0, 3)
+#         if mode % 2 == 0:
+#             curve_random = random.randint(5, 20)
+#             curve_mode = "down" if random.randint(0, 1) > 0 else "up"
+#             tran = Curve(width=self.width, height=self.height, spacing=40,
+#                          flexure=curve_random/100, direction=curve_mode,
+#                          is_horizon=(mode%4==0))
+#         else:
+#             folded_up = random.randint(5, 20)
+#             folded_down = random.randint(5, 20)
+#             tran = Folded(width=self.width, height=self.height, spacing=40,
+#                           up_slope=folded_up/100, down_slope=folded_down/100,
+#                           is_horizon=(mode%4==1))
+#         img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
+#         y = cv2.resize(y, (self.width, self.height))
+#         y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
+#         y = cv2.resize(y, (self.width // 2, self.height // 2))
+#         y = y.transpose(1, 0).astype(np.uint8)
+#         points, labels = [], []
+#         for idx, x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
+#             points.append((x1, y1))
+#             points.append((x2, y2))
+#             points.append((x3, y3))
+#             points.append((x4, y4))
+#             labels.append(idx)
+#         bbox = tran.transform_points(points)
+#         bbox = [(labels[i], *bbox[4*i], *bbox[4*i+1], *bbox[4*i+2], *bbox[4*i+3]) for i in range(len(bbox)//4)]
         #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
         #cv2.imwrite("label_curved.png", heatmap_img)
         #cv2.imwrite("origin_curved_1_{}.png".format(b), imgs[b])
-        return img, y, bbox
+        return img
 
-    def save(self, img, y, bbox, idx=0):
+    def save(self, img, idx=0):
         idx = str(idx)
         origin_path = pjoin(self.res_path, "origin_noise")
         label_path = pjoin(self.res_path, "origin_noise_label")
@@ -183,16 +186,16 @@ class Pipeline:
             if not os.path.exists(path):
                 os.makedirs(path)
         cv2.imwrite(pjoin(origin_path, idx+self.img_postfix), img)
-        np.save(pjoin(label_path, idx+self.y_postfix),  y)
-        with open(pjoin(bbox_path, idx+self.bbox_postfix), 'wb') as fout:
-            pickle.dump(bbox, fout)
+#         np.save(pjoin(label_path, idx+self.y_postfix),  y)
+#         with open(pjoin(bbox_path, idx+self.bbox_postfix), 'wb') as fout:
+#             pickle.dump(bbox, fout)
 
     def run(self):
         for file_name in tqdm.tqdm(self.load_files()):
             idx = file_name.split(".")[0]
             img, y, bbox = self.load_np(idx)
-            img, y, bbox = self.transform(img, y, bbox)
-            self.save(img, y, bbox, idx)
+            img = self.transform(img, y, bbox)
+            self.save(img, idx)
 
 
 if __name__ == "__main__":

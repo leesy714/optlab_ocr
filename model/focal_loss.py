@@ -4,7 +4,6 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 
-device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
 """
 From https://github.com/clcarwin/focal_loss_pytorch
 """

@@ -35,6 +35,24 @@ def precision(y_true, y_pred):
     correct = (positive[y_true == y_pred]).sum().item()
     return correct / (total + 1e-8)
 
+def accuracy_bbox(y_true, y_pred, bboxes):
+    acc = []
+    batch = y_true.size(0)
+    for b in range(batch):
+        _y_true = y_true[b]
+        _y_pred = y_pred[b]
+        _bbox = bboxes[b]
+        for box in _bbox:
+            label, x1, y1, x2, y2, x3, y3, x4, y4 = box
+            x_min, x_max = min(x1, x2, x3, x4)//2, max(x1, x2, x3, x4)//2
+            y_min, y_max = min(y1, y2, y3, y4)//2, max(y1, y2, y3, y4)//2
+            if x_min == x_max or y_min == y_max:
+                continue
+            y_pred_box = torch.flatten(_y_pred[y_min:y_max, x_min:x_max])
+            uniq2, counts = torch.unique(y_pred_box, return_counts=True)
+            acc.append(int(uniq2[counts.argmax()]) == label)
+            #acc.append(label == uniq2[0])
+    return sum(acc) / (len(acc) + 1e-8)
 
 class Data(Dataset):
 
@@ -51,7 +69,6 @@ class Data(Dataset):
         assert len(os.listdir(self.ipt_dir)) == len(os.listdir(self.opt_dir)) == len(os.listdir(self.base_dir))
 
         self.data_len = len(os.listdir(self.ipt_dir))
-        self.data_len = 500
 
     def __getitem__(self, idx):
         base = cv2.imread(os.path.join(self.base_dir, str(idx)+".jpg"))
@@ -59,7 +76,7 @@ class Data(Dataset):
         y = np.load(os.path.join(self.opt_dir, str(idx)+".npy"))
         x = x.reshape(640, 480, 1)
         x = x.transpose(2, 0, 1)
-        y = y.reshape(640, 480)
+        y = y.transpose(1, 0)
         base = base.reshape(1280, 960, 3)
         return x, y.astype(np.int64), base, idx
 
@@ -133,11 +150,13 @@ class Model(nn.Module):
 
 class Train:
 
-    def __init__(self, classes, batch_size=4, loss_gamma=0, loss_alpha=0.5, epochs=10):
+    def __init__(self, classes, batch_size=4, loss_gamma=0, loss_alpha=0.5,
+                 learning_rate=0.01, epochs=10):
         self.classes = classes
         self.epochs =  epochs
-        self.learning_rate = 0.005
+        self.learning_rate = 0.01
         self.data = Data()
+        self.batch_size = batch_size
         self.loss_gamma = loss_gamma
         self.loss_alpha = loss_alpha
 
@@ -171,38 +190,42 @@ class Train:
             batch_loss = loss.item()
             total_loss += batch_loss
             pbar.set_postfix(train_loss=batch_loss)
-        total_loss /= (self.train_num)
+        total_loss /= len(self.train_loader)
         return total_loss[0]
 
     def validate(self, epoch, iterator, loss_func):
         self.model.eval()
         total_loss = torch.Tensor([0])
 
-        accs, recs, pres = [] ,[], []
-        for batch, (imgs, ys, _, idx) in enumerate(iterator):
+        accs, recs, pres, acc_boxes = [] ,[], [], []
+        for batch, (imgs, ys, _, file_num) in enumerate(iterator):
             imgs = imgs.to(device)
-            ys = ys.to(device, dtype=torch.long)
+            ys = ys.to(device)
             pred, _ = self.model(imgs)
             loss = loss_func(pred, ys)
             total_loss += loss.item()
             pred = pred.permute(0, 2, 3, 1)
             _, argmax = pred.max(dim=3)
+            bbox = [self.load_bbox(b) for b in file_num]
+            acc_box = accuracy_bbox(ys, argmax, bbox)
             acc = accuracy(ys.view(-1, 1), argmax.view(-1, 1))
             rec = recall(ys.view(-1, 1), argmax.view(-1, 1))
             pre = precision(ys.view(-1, 1), argmax.view(-1, 1))
             accs.append(acc)
+            acc_boxes.append(acc_box)
             recs.append(rec)
             pres.append(pre)
         acc = sum(accs) / len(accs)
+        acc_box = sum(acc_boxes) / len(acc_boxes)
         rec = sum(recs) / len(recs)
         pre = sum(pres) / len(pres)
-        print("acc: {}, recall: {}, precision: {}".format(acc, rec, pre))
+        print("acc: {}, recall: {}, precision: {}, acc_bbox: {}".format(acc, rec, pre, acc_box))
 
-        total_loss /= (self.vali_num)
-        return total_loss[0], acc, rec, pre
+        total_loss /= len(iterator)
+        return total_loss[0], acc, rec, pre, acc_box
 
     def load_bbox(self, file_num):
-        with open("../data/imgs/origin_noise_bbox/" + str(file_num) + ".pickle", "rb") as fin:
+        with open("../data/imgs/origin_noise_bbox/" + str(int(file_num)) + ".pickle", "rb") as fin:
             bbox = pickle.load(fin)
         return bbox
 
@@ -214,7 +237,6 @@ class Train:
             pred, _ = self.model(imgs)
             pred = pred.permute(0, 2, 3, 1)
             _, argmax = pred.max(dim=3)
-            print(argmax.size())
             argmax = argmax.cpu().data.numpy()
             imgs = imgs.squeeze().cpu().data.numpy()
 
@@ -252,10 +274,11 @@ class Train:
         tot_vali_loss = np.inf
         for epoch in range(self.epochs):
             train_loss = self.train(epoch, loss_func, optimizer)
-            vali_loss, acc, rec, pre = self.validate(epoch, self.vali_loader, loss_func)
+            vali_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
             res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
-                              accuracy=float(acc), recall=float(rec), precision=float(pre))
-            print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}".format(train_loss, vali_loss, rec))
+                              accuracy=float(acc), recall=float(rec), precision=float(pre),
+                              accuracy_bbox=float(acc_box))
+            print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}, box_acc: {:.4}".format(train_loss, vali_loss, rec, acc_box))
         if not os.path.exists("weight"):
             os.makedirs("weight")
         self.test()
@@ -263,6 +286,6 @@ class Train:
         torch.save(self.model.cpu().state_dict(), os.path.join("weight", "fully_connected.pt"))
 
 if __name__ == "__main__":
-    train = Train(classes=9, epochs=1, batch_size=8, loss_gamma=0.3, loss_alpha=0.25)
+    train = Train(classes=9, epochs=50, batch_size=8, loss_gamma=0.0, loss_alpha=0.25)
     train.run()
 
