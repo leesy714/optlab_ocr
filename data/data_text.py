@@ -467,7 +467,7 @@ def main_random():
     #################### 생성할 data에 따라 format.png 수정 ######################
 
     random_text = RandomLine("sample1.png", text_type_lists, location_lists,
-                             fontsize_lists, output_num=10)
+                             fontsize_lists, output_num=1000)
     img = random_text.run()
 
 if __name__=='__main__':

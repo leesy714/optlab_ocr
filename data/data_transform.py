@@ -21,6 +21,7 @@ class Pipeline:
         self.img_postfix = ".jpg"
         self.y_postfix = ".npy"
         self.bbox_postfix = ".pickle"
+        self.annot_postfix = '.xml'
 
     def load_files(self):
         origin_file_list = os.listdir(pjoin(self.res_path, "origin"))
@@ -173,29 +174,15 @@ class Pipeline:
         return string
 
 
-    def bbox_transform(self, tran, bb):
+    def bbox_transform(self, bb):
         points = []
-        for (xmin, ymin), (xmax, ymax), f in bb:
-            points.append((xmin,ymin))
-            points.append((xmin,ymax))
-            points.append((xmax,ymax))
-            points.append((xmax,ymin))
-
-
-        points = tran.transform_points(points)
-        new_bb = []
-        for i in range(0,len(points),4):
-            x1,y1 = points[i]
-            x2,y2 = points[i+1]
-            x3,y3 = points[i+2]
-            x4,y4 = points[i+3]
+        for f, x1, y1, x2, y2, x3,y3, x4, y4 in bb:
             xmin = min(x1,x2,x3,x4)
             ymin = min(y1,y2,y3,y4)
             xmax = max(x1,x2,x3,x4)
             ymax = max(y1,y2,y3,y4)
-            f = bb[i // 4][2]
-            new_bb.append(((xmin,ymin),(xmax,ymax),f))
-        return new_bb
+            points.append(((xmin,ymin),(xmax,ymax),f))
+        return points
 
 
 
@@ -248,14 +235,20 @@ class Pipeline:
         origin_path = pjoin(self.res_path, "origin_noise")
         label_path = pjoin(self.res_path, "origin_noise_label")
         bbox_path = pjoin(self.res_path, "origin_noise_bbox")
-        for path in [origin_path, label_path, bbox_path]:
+        annot_path = pjoin(self.res_path, "origin_noise_annotation")
+        bbox_tran = self.bbox_transform(bbox)
+        annot = self.annotation(img, bbox_tran, idx)
+
+        for path in [origin_path, label_path, bbox_path, annot_path]:
             if not os.path.exists(path):
                 os.makedirs(path)
+
         cv2.imwrite(pjoin(origin_path, idx+self.img_postfix), img)
         np.save(pjoin(label_path, idx+self.y_postfix),  y)
         with open(pjoin(bbox_path, idx+self.bbox_postfix), 'wb') as fout:
             pickle.dump(bbox, fout)
-#>>>>>>> a9eddc184b1ec1770d40389eebcf3ab5bf9e26eb
+        with open(pjoin(annot_path, idx+self.annot_postfix),'w') as fout:
+            fout.write(annot)
 
     def run(self):
         for file_name in tqdm.tqdm(self.load_files()):
