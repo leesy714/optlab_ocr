@@ -12,10 +12,14 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from tqdm import tqdm
 import logging
 
+from craft_inference import copyStateDict, resize_aspect_ratio_batch, normalizeMeanVariance
+from craft import CRAFT
+
 from focal_loss import FocalLoss
 
 
-device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
+#device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = 'cuda:0'
 
 
 def accuracy(y_true, y_pred):
@@ -55,6 +59,8 @@ def accuracy_bbox(y_true, y_pred, bboxes):
     return sum(acc) / (len(acc) + 1e-8)
 
 class Data(Dataset):
+    CANVAS_SIZE = 1280
+    MAG_RATIO = 1.5
 
     def __init__(self):
         #self.classes = classes
@@ -64,20 +70,35 @@ class Data(Dataset):
         #self.y = y
         #self.base = base
         self.base_dir = "../data/imgs/origin_noise"
-        self.ipt_dir = "../data/imgs/origin_craft"
+        self.ipt_dir = "../data/imgs/origin_noise"
+        #self.ipt_dir = "../data/imgs/origin_craft"
         self.opt_dir = "../data/imgs/origin_noise_label"
         assert len(os.listdir(self.ipt_dir)) == len(os.listdir(self.opt_dir)) == len(os.listdir(self.base_dir))
 
         self.data_len = len(os.listdir(self.ipt_dir))
 
     def __getitem__(self, idx):
-        base = cv2.imread(os.path.join(self.base_dir, str(idx)+".jpg"))
-        x = np.load(os.path.join(self.ipt_dir, str(idx)+".npy"))
-        y = np.load(os.path.join(self.opt_dir, str(idx)+".npy"))
-        x = x.reshape(640, 480, 1)
-        x = x.transpose(2, 0, 1)
+        base = cv2.imread(os.path.join(self.base_dir, "{:06d}".format(idx)+".jpg"))
+        x = cv2.imread(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".jpg"))
+        #x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
+        y = np.load(os.path.join(self.opt_dir, "{:06d}".format(idx)+".npy"))
+        #x = x.reshape(640, 480, 1)
+        #x = x.transpose(2, 0, 1)
         y = y.transpose(1, 0)
-        base = base.reshape(1280, 960, 3)
+
+
+        #base = base.reshape(1280, 960, 3)
+
+        x = x.reshape(1, x.shape[0], x.shape[1], x.shape[2])
+
+        img_resized, target_ratio, size_heatmap = resize_aspect_ratio_batch(
+            x, self.CANVAS_SIZE, interpolation=cv2.INTER_LINEAR, mag_ratio=self.MAG_RATIO)
+        ratio_h = ratio_w = 1/target_ratio
+
+        x = normalizeMeanVariance(img_resized)
+
+
+        x = x.squeeze()
         return x, y.astype(np.int64), base, idx
 
     def __len__(self):
@@ -116,16 +137,28 @@ class double_conv(nn.Module):
 
 
 class Model(nn.Module):
+    TRAINED_MODEL = 'weights/craft_mlt_25k.pth'
 
-    def __init__(self, classes):
+    def __init__(self, classes, pretrained=True):
         super(Model, self).__init__()
+        self.craft = CRAFT()
+
+        if pretrained:
+            print('Loading weights from checkpoint (' + self.TRAINED_MODEL + ')')
+            self.craft.load_state_dict(copyStateDict(torch.load(
+                self.TRAINED_MODEL, map_location='cpu')))
+        for p in self.craft.parameters():
+            p.requires_grad = False
+        self.craft.eval()
+
+
 
         self.conv = nn.Sequential(
-            nn.Conv2d(1, 4, kernel_size=(9, 7), padding=(4, 3)),
-            nn.BatchNorm2d(4),
+            nn.Conv2d(5, 8, kernel_size=(9, 7), padding=(4, 3)),
+            nn.BatchNorm2d(8),
             nn.ReLU(inplace=True)
         )
-        self.conv1 = double_conv(4, 8, 16)
+        self.conv1 = double_conv(8, 8, 16)
         self.conv2 = double_conv(16, 32, 64)
 
 
@@ -141,6 +174,14 @@ class Model(nn.Module):
         init_weights(self.conv_cls.modules())
 
     def forward(self, x):
+
+        with torch.no_grad():
+            craft_y, craft_feature = self.craft(x)
+        craft_y = craft_y.permute(0, 3,1,2)
+        pool_x = torch.max_pool2d(x, (2,2))
+
+        x = torch.cat([pool_x, craft_y],dim=1)
+
         y = self.conv(x)
         feature = self.conv1(y)
         feature = self.conv2(feature)
@@ -169,7 +210,11 @@ class Train:
         self.vali_loader = DataLoader(vali, batch_size=batch_size, shuffle=False, num_workers=4)
         self.test_loader = DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=4)
 
-        self.model = Model(self.classes).to(device)
+        self.model = Model(self.classes)
+        if torch.cuda.device_count()>1:
+            print("Use ", torch.cuda.device_count(), 'GPUs')
+            self.model = nn.DataParallel(self.model)
+        self.model = self.model.to(device)
 
 
     def train(self, epoch, loss_func, optimizer):
@@ -179,7 +224,10 @@ class Train:
         pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
                     desc="({0:^3})".format(epoch))
 
-        for batch, (imgs, ys, _, idx) in pbar:
+        for batch, (imgs, ys, base, idx) in pbar:
+            #print(type(imgs), imgs.shape)
+            #print(type(ys), ys.shape)
+            imgs = imgs.permute(0,3,1,2)
             imgs = imgs.to(device)
             ys = ys.to(device)
             optimizer.zero_grad()
@@ -199,6 +247,7 @@ class Train:
 
         accs, recs, pres, acc_boxes = [] ,[], [], []
         for batch, (imgs, ys, _, file_num) in enumerate(iterator):
+            imgs = imgs.permute(0,3,1,2)
             imgs = imgs.to(device)
             ys = ys.to(device)
             pred, _ = self.model(imgs)
@@ -225,7 +274,7 @@ class Train:
         return total_loss[0], acc, rec, pre, acc_box
 
     def load_bbox(self, file_num):
-        with open("../data/imgs/origin_noise_bbox/" + str(int(file_num)) + ".pickle", "rb") as fin:
+        with open("../data/imgs/origin_noise_bbox/{:06d}.pickle".format(int(file_num)), "rb") as fin:
             bbox = pickle.load(fin)
         return bbox
 
@@ -248,9 +297,9 @@ class Train:
                 img = np.clip(img*(255 / self.classes), 0, 255).astype(np.uint8)
                 img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
                 origin = cv2.applyColorMap(origin, cv2.COLORMAP_JET)
-                cv2.imwrite("./res/{}_base.png".format(idx), bases[idx])
-                cv2.imwrite("./res/{}.png".format(idx), img)
-                cv2.imwrite("./res/{}_craft.png".format(idx), origin)
+                cv2.imwrite("./res/{:06d}_base.png".format(idx), bases[idx])
+                cv2.imwrite("./res/{:06d}.png".format(idx), img)
+                cv2.imwrite("./res/{:06d}_craft.png".format(idx), origin)
             break
 
     def count_parameters(self):
@@ -273,17 +322,19 @@ class Train:
         res = {}
         tot_vali_loss = np.inf
         for epoch in range(self.epochs):
+
+            torch.save(self.model.module.state_dict(), os.path.join('..','ocr_faster_rcnn','data','pretrained_model', "cnn_seg.pth"))
             train_loss = self.train(epoch, loss_func, optimizer)
             vali_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
             res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
                               accuracy=float(acc), recall=float(rec), precision=float(pre),
                               accuracy_bbox=float(acc_box))
             print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}, box_acc: {:.4}".format(train_loss, vali_loss, rec, acc_box))
-        if not os.path.exists("weight"):
-            os.makedirs("weight")
+            self.save(res)
+
+        #if not os.path.exists("weights"):
+        #    os.makedirs("weights")
         self.test()
-        self.save(res)
-        torch.save(self.model.cpu().state_dict(), os.path.join("weight", "fully_connected.pt"))
 
 if __name__ == "__main__":
     train = Train(classes=9, epochs=50, batch_size=8, loss_gamma=0.0, loss_alpha=0.25)

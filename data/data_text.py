@@ -95,9 +95,9 @@ class RandomText:
         for path in [origin_path, label_path, bbox_path]:
             if not os.path.exists(path):
                 os.makedirs(path)
-        cv2.imwrite(os.path.join(origin_path, "{}.jpg".format(idx)), img)
-        np.save(os.path.join(label_path, "{}.npy".format(idx)),  y)
-        with open(os.path.join(bbox_path, "{}.pickle".format(idx)), 'wb') as fout:
+        cv2.imwrite(os.path.join(origin_path, "{:06d}.jpg".format(idx)), img)
+        np.save(os.path.join(label_path, "{:06d}.npy".format(idx)),  y)
+        with open(os.path.join(bbox_path, "{:06d}.pickle".format(idx)), 'wb') as fout:
             pickle.dump(bbox, fout)
 
     def run(self):
@@ -467,7 +467,7 @@ def main_random():
     #################### 생성할 data에 따라 format.png 수정 ######################
 
     random_text = RandomLine("sample1.png", text_type_lists, location_lists,
-                             fontsize_lists, output_num=1000)
+                             fontsize_lists, output_num=100)
     img = random_text.run()
 
 if __name__=='__main__':
