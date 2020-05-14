@@ -10,6 +10,7 @@ import cv2
 
 from curve import Curve
 from folded import Folded
+from perspective import Perspective
 
 class Pipeline:
 
@@ -27,6 +28,7 @@ class Pipeline:
         label_file_list = os.listdir(pjoin(self.res_path, "origin_label"))
         bbox_file_list = os.listdir(pjoin(self.res_path, "origin_bbox"))
         assert len(origin_file_list) == len(label_file_list) == len(bbox_file_list)
+        origin_file_list.sort()
         return origin_file_list
 
     def load_np(self, idx):
@@ -145,8 +147,11 @@ class Pipeline:
 
     def transform(self, img, y, bbox):
         img = self.noise_generate(img.copy())
-        mode = random.randint(0, 3)
-        if mode % 2 == 0:
+        mode = random.randint(0, 4)
+        
+        if mode == 4:
+            tran = Perspective(self.width, self.height)
+        elif mode % 2 == 0:
             curve_random = random.randint(5, 20)
             curve_mode = "down" if random.randint(0, 1) > 0 else "up"
             tran = Curve(width=self.width, height=self.height, spacing=40,
@@ -158,6 +163,7 @@ class Pipeline:
             tran = Folded(width=self.width, height=self.height, spacing=40,
                           up_slope=folded_up/100, down_slope=folded_down/100,
                           is_horizon=(mode%4==1))
+        
         img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
         y = cv2.resize(y, (self.width, self.height))
         y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
@@ -172,9 +178,11 @@ class Pipeline:
             labels.append(idx)
         bbox = tran.transform_points(points)
         bbox = [(labels[i], *bbox[4*i], *bbox[4*i+1], *bbox[4*i+2], *bbox[4*i+3]) for i in range(len(bbox)//4)]
-        #heatmap_img = cv2.applyColorMap(ys[0], cv2.COLORMAP_JET)
-        #cv2.imwrite("label_curved.png", heatmap_img)
-        #cv2.imwrite("origin_curved_1_{}.png".format(b), imgs[b])
+        
+#         heatmap_img = np.clip(y.transpose(1, 0) * (255 /9), 0 ,255).astype(np.uint8)
+#         heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+#         cv2.imwrite("label_pers.png", heatmap_img)
+        
         return img, y, bbox
 
     def save(self, img, y, bbox, idx=0):
