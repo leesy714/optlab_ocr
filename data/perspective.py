@@ -46,17 +46,29 @@ class Perspective(Transform):
             
         return t_points
     
-    def run(self, ipt, ipt_format="file", opt="res_pers.png", opt_format="file", base="Arles-15t.jpg", base_format="file"):
+    def run(self, channel, ipt, ipt_format="file", opt="res_pers.png", opt_format="file", base="Arles-15t.jpg", base_format="file"):
+        
         
         self.load_ipt(ipt, ipt_format)
-        self.origin = cv2.cvtColor(self.origin, cv2.COLOR_BGR2BGRA)
+        if channel > 1:
+            self.origin = cv2.cvtColor(self.origin, cv2.COLOR_BGR2BGRA)
         self.origin = cv2.resize(self.origin, dsize=(self.width, self.height))
         
-        # Base img 받을 변수 필요 (self.base)
-        imgBase = cv2.imread(base)
-        imgBase = cv2.cvtColor(imgBase, cv2.COLOR_BGR2BGRA)
-        imgBase = cv2.resize(imgBase, dsize=(self.width, self.height), interpolation=cv2.INTER_AREA)
+        # test code #
+#         img = np.clip(self.origin * (255 /9), 0 ,255)
+#         heatmap_img = cv2.applyColorMap(img.astype(np.uint8), cv2.COLORMAP_JET)
+#         cv2.imwrite("origin_label.png", heatmap_img)
+#         print("origin shape", self.origin.shape)
+#         print(self.origin.sum())
         
+        # Base img 받을 변수 필요 (self.base)
+        if channel > 1:
+            imgBase = cv2.imread(base)
+            imgBase = cv2.cvtColor(imgBase, cv2.COLOR_BGR2BGRA)
+            imgBase = cv2.resize(imgBase, dsize=(self.width, self.height), interpolation=cv2.INTER_AREA)
+        else:
+            imgBase = np.zeros((self.height, self.width), np.uint8)
+            
         # Distort perspective
         pts1 = np.float32([[0,0],[self.width,0],[0,self.height],[self.width,self.height]])
         
@@ -89,13 +101,18 @@ class Perspective(Transform):
         
         y1, y2 = y, int(y+self.height_ratio*self.height)
         x1, x2 = x, int(x+self.width_ratio*self.width)
-
-        alpha_p = self.origin[:, :, 3] / 255.0
+        if channel > 1:
+            alpha_p = self.origin[:, :, 3] / 255.0
+        else:
+            alpha_p = self.origin[:, :] / 255.0
         alpha_b = 1.0 - alpha_p
 
-        for c in range(0, 3):
-            imgBase[y1:y2, x1:x2, c] = (alpha_p[y1:y2, x1:x2] * self.origin[y1:y2, x1:x2, c] + alpha_b[y1:y2, x1:x2] * imgBase[y1:y2, x1:x2, c])
-        
+        if channel > 1:
+            for c in range(0, 3):
+                imgBase[y1:y2, x1:x2, c] = (alpha_p[y1:y2, x1:x2] * self.origin[y1:y2, x1:x2, c] + alpha_b[y1:y2, x1:x2] * imgBase[y1:y2, x1:x2, c])
+        else:
+            imgBase[y1:y2, x1:x2] = self.origin[y1:y2, x1:x2] + imgBase[y1:y2, x1:x2]
+            
         # cv2.imwrite(opt, imgBase)
         return self.save(imgBase, opt, opt_format)
         
@@ -106,9 +123,26 @@ class Perspective(Transform):
         
 if __name__ == "__main__":
     # 예시 이미지
-    imgPers = cv2.imread('sample1.png')
-    height, width = imgPers.shape[:2]
+#     imgPers = cv2.imread('sample1.png')
+#     height, width = imgPers.shape[:2]
+#     tran = Perspective(width, height)
+#     tran.run(3, ipt="sample1.png")
+#     tran.transform_points([(0,0), (width,0), (0, height), (width, height)])
+
+    width, height = 960, 1280
+    y = np.load("imgs/origin_label/0.npy")
+    print("origin label shape", y.shape)
+    heatmap_img = np.clip(y.transpose(1, 0) * (255 /9), 0 ,255).astype(np.uint8)
+    heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+    cv2.imwrite("origin_label.png", heatmap_img)
+    
+    y = cv2.resize(y.transpose(1, 0), (width, height))
     tran = Perspective(width, height)
-    tran.run(ipt="sample1.png")
-    tran.transform_points([(0,0), (width,0), (0, height), (width, height)])
+    y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")    
+    # y = cv2.resize(y, (width // 2, height // 2))
+    # test code #
+    y = np.clip(y * (255 /9), 0 ,255).astype(np.uint8)
+    heatmap_img = cv2.applyColorMap(y, cv2.COLORMAP_JET)
+    cv2.imwrite("label_pers.png", heatmap_img)
+    
     
