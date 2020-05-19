@@ -71,8 +71,11 @@ class Data(Dataset):
         #self.base = base
         self.base_dir = "../data/imgs/origin_noise"
         self.ipt_dir = "../data/imgs/origin_noise"
+        #self.base_dir = '/data/imgs/origin_noise'
+        #self.ipt_dir = '/data/imgs/origin_noise'
         #self.ipt_dir = "../data/imgs/origin_craft"
         self.opt_dir = "../data/imgs/origin_noise_label"
+        #self.opt_dir = '/data/imgs/origin_noise_label'
         assert len(os.listdir(self.ipt_dir)) == len(os.listdir(self.opt_dir)) == len(os.listdir(self.base_dir))
 
         self.data_len = len(os.listdir(self.ipt_dir))
@@ -82,6 +85,12 @@ class Data(Dataset):
         x = cv2.imread(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".jpg"))
         #x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
         y = np.load(os.path.join(self.opt_dir, "{:06d}".format(idx)+".npy"))
+
+        #base = cv2.imread(os.path.join(self.base_dir, "{:d}".format(idx)+".jpg"))
+        #x = cv2.imread(os.path.join(self.ipt_dir, "{:d}".format(idx)+".jpg"))
+        #x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
+        #y = np.load(os.path.join(self.opt_dir, "{:d}".format(idx)+".npy"))
+
         #x = x.reshape(640, 480, 1)
         #x = x.transpose(2, 0, 1)
         y = y.transpose(1, 0)
@@ -123,10 +132,10 @@ class double_conv(nn.Module):
     def __init__(self, in_ch, mid_ch, out_ch):
         super(double_conv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, mid_ch, kernel_size=(9, 7), padding=(4, 3)),
+            nn.Conv2d(in_ch, mid_ch, kernel_size=(3,3), padding=(1, 1)),
             nn.BatchNorm2d(mid_ch),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_ch, out_ch, kernel_size=(9, 7), padding=(4, 3)),
+            nn.Conv2d(mid_ch, out_ch, kernel_size=(3, 3), padding=(1, 1)),
             nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True)
         )
@@ -154,18 +163,18 @@ class Model(nn.Module):
 
 
         self.conv = nn.Sequential(
-            nn.Conv2d(5, 8, kernel_size=(9, 7), padding=(4, 3)),
-            nn.BatchNorm2d(8),
+            nn.Conv2d(5, 32, kernel_size=(3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True)
         )
-        self.conv1 = double_conv(8, 8, 16)
-        self.conv2 = double_conv(16, 32, 64)
+        self.conv1 = double_conv(32, 64, 128)
+        self.conv2 = double_conv(128, 256, 512)
 
 
         self.conv_cls = nn.Sequential(
-            nn.Conv2d(64, 32, kernel_size=7, padding=3), nn.ReLU(inplace=True),
-            nn.Conv2d(32, 16, kernel_size=7, padding=3), nn.ReLU(inplace=True),
-            nn.Conv2d(16, classes + 1, kernel_size=1),
+            nn.Conv2d(512, 256, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+            nn.Conv2d(256, 128, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+            nn.Conv2d(128, classes + 1, kernel_size=1),
         )
 
         init_weights(self.conv.modules())
@@ -324,6 +333,7 @@ class Train:
         for epoch in range(self.epochs):
 
             torch.save(self.model.module.state_dict(), os.path.join('..','ocr_faster_rcnn','data','pretrained_model', "cnn_seg.pth"))
+            #torch.save(self.model.state_dict(), os.path.join('..','ocr_faster_rcnn','data','pretrained_model', "cnn_seg.pth"))
             train_loss = self.train(epoch, loss_func, optimizer)
             vali_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
             res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
@@ -337,6 +347,6 @@ class Train:
         self.test()
 
 if __name__ == "__main__":
-    train = Train(classes=9, epochs=50, batch_size=8, loss_gamma=0.0, loss_alpha=0.25)
+    train = Train(classes=9, epochs=50, batch_size=2, loss_gamma=0.0, loss_alpha=0.25)
     train.run()
 
