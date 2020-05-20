@@ -69,8 +69,8 @@ class Data(Dataset):
         #self.x = x
         #self.y = y
         #self.base = base
-        self.base_dir = "../data/imgs/origin_noise"
-        self.ipt_dir = "../data/imgs/origin_noise"
+        self.base_dir = "./imgs/origin_noise/"
+        self.ipt_dir = "./imgs/origin_craft/"
         #self.base_dir = '/data/imgs/origin_noise'
         #self.ipt_dir = '/data/imgs/origin_noise'
         #self.ipt_dir = "../data/imgs/origin_craft"
@@ -82,8 +82,8 @@ class Data(Dataset):
 
     def __getitem__(self, idx):
         base = cv2.imread(os.path.join(self.base_dir, "{:06d}".format(idx)+".jpg"))
-        x = cv2.imread(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".jpg"))
-        #x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
+        #x = cv2.imread(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".jpg"))
+        x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
         y = np.load(os.path.join(self.opt_dir, "{:06d}".format(idx)+".npy"))
 
         #base = cv2.imread(os.path.join(self.base_dir, "{:d}".format(idx)+".jpg"))
@@ -98,16 +98,18 @@ class Data(Dataset):
 
         #base = base.reshape(1280, 960, 3)
 
-        x = x.reshape(1, x.shape[0], x.shape[1], x.shape[2])
+        x = x.reshape(1, x.shape[0], x.shape[1])
+        base = base.reshape(1, base.shape[0], base.shape[1], base.shape[2])
+
 
         img_resized, target_ratio, size_heatmap = resize_aspect_ratio_batch(
-            x, self.CANVAS_SIZE, interpolation=cv2.INTER_LINEAR, mag_ratio=self.MAG_RATIO)
+            base, self.CANVAS_SIZE, interpolation=cv2.INTER_LINEAR, mag_ratio=self.MAG_RATIO)
         ratio_h = ratio_w = 1/target_ratio
 
-        x = normalizeMeanVariance(img_resized)
+        base = normalizeMeanVariance(img_resized)
 
 
-        x = x.squeeze()
+        base = base.squeeze()
         return x, y.astype(np.int64), base, idx
 
     def __len__(self):
@@ -126,6 +128,31 @@ def init_weights(modules):
         elif isinstance(m, nn.Linear):
             m.weight.data.normal_(0, 0.01)
             m.bias.data.zero_()
+
+
+class res_block(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(res_block, self).__init__()
+        self.bn1 = nn.BatchNorm2d(in_ch)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.conv1 = nn.Conv2d(in_ch, in_ch, kernel_size=(3,3), padding=(1,1))
+
+        self.bn2 = nn.BatchNorm2d(in_ch)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(in_ch, out_ch, kernel_size=(3,3), padding=(1,1))
+
+        self.skip_conv = nn.Conv2d(in_ch, out_ch, kernel_size=1)
+
+
+    def forward(self, x):
+        skip_x = x
+        x = self.conv1(self.relu1(self.bn1(x)))
+        x = self.conv2(self.relu2(self.bn2(x)))
+        x =  x + self.skip_conv(skip_x)
+        return x
+
+
+
 
 
 class double_conv(nn.Module):
@@ -148,52 +175,64 @@ class double_conv(nn.Module):
 class Model(nn.Module):
     TRAINED_MODEL = 'weights/craft_mlt_25k.pth'
 
-    def __init__(self, classes, pretrained=True):
+    def __init__(self, classes, pretrained=False, preprocessed=True):
+
+        assert not(pretrained and preprocessed)
         super(Model, self).__init__()
-        self.craft = CRAFT()
-
-        if pretrained:
-            print('Loading weights from checkpoint (' + self.TRAINED_MODEL + ')')
-            self.craft.load_state_dict(copyStateDict(torch.load(
-                self.TRAINED_MODEL, map_location='cpu')))
-        for p in self.craft.parameters():
-            p.requires_grad = False
-        self.craft.eval()
 
 
+        if not preprocessed:
+            self.craft = CRAFT()
+
+            if pretrained:
+                print('Loading weights from checkpoint (' + self.TRAINED_MODEL + ')')
+                self.craft.load_state_dict(copyStateDict(torch.load(
+                    self.TRAINED_MODEL, map_location='cpu')))
+            for p in self.craft.parameters():
+                p.requires_grad = False
+            self.craft.eval()
+        self.preprocessed = preprocessed
 
         self.conv = nn.Sequential(
-            nn.Conv2d(5, 32, kernel_size=(3, 3), padding=(1, 1)),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(4, 16, kernel_size=(3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True)
         )
-        self.conv1 = double_conv(32, 64, 128)
-        self.conv2 = double_conv(128, 256, 512)
+        # self.conv1 = double_conv(16, 32, 64)
+        # self.conv2 = double_conv(64, 128, 256)
+        self.conv1 = res_block(16, 32)
+        self.conv2 = res_block(32, 64)
+        self.conv3 = res_block(64, 128)
 
 
         self.conv_cls = nn.Sequential(
-            nn.Conv2d(512, 256, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv2d(128, classes + 1, kernel_size=1),
+            #nn.Conv2d(128, 64, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+            #nn.Conv2d(64, 32, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+            res_block(128, 64),
+            res_block(64, 32),
+            nn.Conv2d(32, classes + 1, kernel_size=1),
         )
 
         init_weights(self.conv.modules())
         init_weights(self.conv1.modules())
         init_weights(self.conv2.modules())
+        init_weights(self.conv3.modules())
         init_weights(self.conv_cls.modules())
 
-    def forward(self, x):
+    def forward(self, x, craft_y=None):
+        assert not(self.preprocessed and craft_y is None)
 
-        with torch.no_grad():
-            craft_y, craft_feature = self.craft(x)
-        craft_y = craft_y.permute(0, 3,1,2)
+        if not self.preprocessed:
+            with torch.no_grad():
+                craft_y, craft_feature = self.craft(x)
+            craft_y = craft_y.permute(0, 3,1,2)
         pool_x = torch.max_pool2d(x, (2,2))
-
         x = torch.cat([pool_x, craft_y],dim=1)
 
         y = self.conv(x)
         feature = self.conv1(y)
         feature = self.conv2(feature)
+        feature = self.conv3(feature)
         y = self.conv_cls(feature)
 
         return y, feature
@@ -201,10 +240,10 @@ class Model(nn.Module):
 class Train:
 
     def __init__(self, classes, batch_size=4, loss_gamma=0, loss_alpha=0.5,
-                 learning_rate=0.01, epochs=10):
+                 learning_rate=1e-4, epochs=10):
         self.classes = classes
         self.epochs =  epochs
-        self.learning_rate = 0.01
+        self.learning_rate = learning_rate
         self.data = Data()
         self.batch_size = batch_size
         self.loss_gamma = loss_gamma
@@ -233,14 +272,13 @@ class Train:
         pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
                     desc="({0:^3})".format(epoch))
 
-        for batch, (imgs, ys, base, idx) in pbar:
-            #print(type(imgs), imgs.shape)
-            #print(type(ys), ys.shape)
+        for batch, (crafts, ys, imgs, idx) in pbar:
             imgs = imgs.permute(0,3,1,2)
             imgs = imgs.to(device)
             ys = ys.to(device)
+            crafts = crafts.to(device)
             optimizer.zero_grad()
-            pred, _ = self.model(imgs)
+            pred, _ = self.model(imgs, craft_y=crafts)
             loss = loss_func(pred, ys)
             loss.backward()
             optimizer.step()
@@ -255,11 +293,12 @@ class Train:
         total_loss = torch.Tensor([0])
 
         accs, recs, pres, acc_boxes = [] ,[], [], []
-        for batch, (imgs, ys, _, file_num) in enumerate(iterator):
+        for batch, (crafts, ys, imgs, file_num) in enumerate(iterator):
             imgs = imgs.permute(0,3,1,2)
             imgs = imgs.to(device)
             ys = ys.to(device)
-            pred, _ = self.model(imgs)
+            crafts = crafts.to(device)
+            pred, _ = self.model(imgs, craft_y=crafts)
             loss = loss_func(pred, ys)
             total_loss += loss.item()
             pred = pred.permute(0, 2, 3, 1)
@@ -290,8 +329,11 @@ class Train:
     def test(self):
         self.model.eval()
 
-        for batch, (imgs, ys, bases, file_num) in enumerate(self.test_loader):
+        for batch, (crafts, ys, imgs, file_num) in enumerate(self.test_loader):
+            imgs = imgs.permute(0,3,1,2)
             imgs = imgs.to(device)
+            ys = ys.to(device)
+            crafts = crafts.to(device)
             pred, _ = self.model(imgs)
             pred = pred.permute(0, 2, 3, 1)
             _, argmax = pred.max(dim=3)
@@ -347,6 +389,6 @@ class Train:
         self.test()
 
 if __name__ == "__main__":
-    train = Train(classes=9, epochs=50, batch_size=2, loss_gamma=0.0, loss_alpha=0.25)
+    train = Train(classes=9, epochs=50, batch_size=8, loss_gamma=0.0, loss_alpha=0.25)
     train.run()
 
