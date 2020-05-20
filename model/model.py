@@ -373,8 +373,6 @@ class Train:
         res = {}
         tot_vali_loss = np.inf
         for epoch in range(self.epochs):
-
-            torch.save(self.model.module.state_dict(), os.path.join('..','ocr_faster_rcnn','data','pretrained_model', "cnn_seg.pth"))
             #torch.save(self.model.state_dict(), os.path.join('..','ocr_faster_rcnn','data','pretrained_model', "cnn_seg.pth"))
             train_loss = self.train(epoch, loss_func, optimizer)
             vali_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
@@ -383,6 +381,13 @@ class Train:
                               accuracy_bbox=float(acc_box))
             print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}, box_acc: {:.4}".format(train_loss, vali_loss, rec, acc_box))
             self.save(res)
+            save_dict = dict(
+                state_dict = self.model.module.state_dict(),
+                epoch=epoch,
+                train_loss=train_loss,
+                vali_loss=vali_loss,
+            )
+            torch.save(save_dict, os.path.join('..','ocr_faster_rcnn','data','pretrained_model', "cnn_seg.pth"))
 
         #if not os.path.exists("weights"):
         #    os.makedirs("weights")
