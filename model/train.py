@@ -93,6 +93,7 @@ class Train:
         self.test_loader = DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=4)
 
         self.model = Model(self.classes)
+        self.model_name = self.model.__class__.__name__
 
         if torch.cuda.device_count()>1:
             print("Use ", torch.cuda.device_count(), 'GPUs')
@@ -167,7 +168,7 @@ class Train:
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
     def save(self, res):
-        with open("res/{}.json".format(self.model.__class__.__name__), "w") as fout:
+        with open("res/{}.json".format(self.model_name), "w") as fout:
             json.dump(res, fout)
 
     def run(self):
@@ -201,10 +202,7 @@ class Train:
                 train_loss=train_loss,
                 vali_loss=vali_loss,
             )
-            torch.save(save_dict, os.path.join("weight", self.model.__class__.__name__ + ".pth"))
-            #torch.save(save_dict, os.path.join('..','ocr_faster_rcnn','data','pretrained_model', "cnn_seg.pth"))
-
-        self.test()
+            torch.save(save_dict, os.path.join('weight', self.model_name+".pth"))
 
 if __name__ == "__main__":
     fire.Fire(Train)
