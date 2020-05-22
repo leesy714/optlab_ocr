@@ -11,8 +11,6 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 import logging
 
-from craft import CRAFT
-
 from data import Data
 from model import Model
 from focal_loss import FocalLoss
@@ -110,12 +108,13 @@ class Train:
                     desc="({0:^3})".format(epoch))
 
         for batch, (crafts, ys, imgs, idx) in pbar:
-            imgs = imgs.permute(0,3,1,2)
+            imgs = imgs.permute(0, 3, 1, 2)
             imgs = imgs.to(device)
             ys = ys.to(device)
             crafts = crafts.to(device)
+            x = torch.cat((imgs, crafts), dim=1)
             optimizer.zero_grad()
-            pred, _ = self.model(imgs, craft_y=crafts)
+            pred, _ = self.model(x)
             loss = loss_func(pred, ys)
             loss.backward()
             optimizer.step()
@@ -131,11 +130,12 @@ class Train:
 
         accs, recs, pres, acc_boxes = [] ,[], [], []
         for batch, (crafts, ys, imgs, file_num) in enumerate(iterator):
-            imgs = imgs.permute(0,3,1,2)
+            imgs = imgs.permute(0, 3, 1, 2)
             imgs = imgs.to(device)
             ys = ys.to(device)
             crafts = crafts.to(device)
-            pred, _ = self.model(imgs, craft_y=crafts)
+            x = torch.cat((imgs, crafts), dim=1)
+            pred, _ = self.model(x)
             loss = loss_func(pred, ys)
             total_loss += loss.item()
             pred = pred.permute(0, 2, 3, 1)
