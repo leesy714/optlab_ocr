@@ -12,9 +12,9 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from tqdm import tqdm
 import logging
 
-from craft_inference import copyStateDict, resize_aspect_ratio_batch, normalizeMeanVariance
 from craft import CRAFT
 
+from data import Data
 from focal_loss import FocalLoss
 
 
@@ -53,67 +53,14 @@ def accuracy_bbox(y_true, y_pred, bboxes):
             if x_min == x_max or y_min == y_max:
                 continue
             y_pred_box = torch.flatten(_y_pred[y_min:y_max, x_min:x_max])
-            uniq2, counts = torch.unique(y_pred_box, return_counts=True)
-            acc.append(int(uniq2[counts.argmax()]) == label)
-            #acc.append(label == uniq2[0])
+            uniq, counts = torch.unique(y_pred_box, return_counts=True)
+            uniq, counts = enumerate(list(uniq.cpu().numpy())), list(counts.cpu().numpy())
+            uniq = sorted(uniq, key=lambda v: counts[v[0]], reverse=True)
+            uniq = [u[1] for u in uniq]
+            value = uniq[0] if uniq[0] != 0 or len(uniq) <= 1 else uniq[1]
+            acc.append(value == label)
     return sum(acc) / (len(acc) + 1e-8)
 
-class Data(Dataset):
-    CANVAS_SIZE = 1280
-    MAG_RATIO = 1.5
-
-    def __init__(self):
-        #self.classes = classes
-        #x, y, base = self.load()
-        #print("data shape", x.shape, y.shape, base.shape)
-        #self.x = x
-        #self.y = y
-        #self.base = base
-        self.base_dir = "./imgs/origin_noise/"
-        self.ipt_dir = "./imgs/origin_craft/"
-        #self.base_dir = '/data/imgs/origin_noise'
-        #self.ipt_dir = '/data/imgs/origin_noise'
-        #self.ipt_dir = "../data/imgs/origin_craft"
-        self.opt_dir = "../data/imgs/origin_noise_label"
-        #self.opt_dir = '/data/imgs/origin_noise_label'
-        assert len(os.listdir(self.ipt_dir)) == len(os.listdir(self.opt_dir)) == len(os.listdir(self.base_dir))
-
-        self.data_len = len(os.listdir(self.ipt_dir))
-
-    def __getitem__(self, idx):
-        base = cv2.imread(os.path.join(self.base_dir, "{:06d}".format(idx)+".jpg"))
-        #x = cv2.imread(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".jpg"))
-        x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
-        y = np.load(os.path.join(self.opt_dir, "{:06d}".format(idx)+".npy"))
-
-        #base = cv2.imread(os.path.join(self.base_dir, "{:d}".format(idx)+".jpg"))
-        #x = cv2.imread(os.path.join(self.ipt_dir, "{:d}".format(idx)+".jpg"))
-        #x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
-        #y = np.load(os.path.join(self.opt_dir, "{:d}".format(idx)+".npy"))
-
-        #x = x.reshape(640, 480, 1)
-        #x = x.transpose(2, 0, 1)
-        y = y.transpose(1, 0)
-
-
-        #base = base.reshape(1280, 960, 3)
-
-        x = x.reshape(1, x.shape[0], x.shape[1])
-        base = base.reshape(1, base.shape[0], base.shape[1], base.shape[2])
-
-
-        img_resized, target_ratio, size_heatmap = resize_aspect_ratio_batch(
-            base, self.CANVAS_SIZE, interpolation=cv2.INTER_LINEAR, mag_ratio=self.MAG_RATIO)
-        ratio_h = ratio_w = 1/target_ratio
-
-        base = normalizeMeanVariance(img_resized)
-
-
-        base = base.squeeze()
-        return x, y.astype(np.int64), base, idx
-
-    def __len__(self):
-        return self.data_len
 
 
 def init_weights(modules):

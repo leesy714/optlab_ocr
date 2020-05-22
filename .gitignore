@@ -126,5 +126,6 @@ res
 data/fonts
 data/weights
 data/imgs
+model/weight
 
 *.png
