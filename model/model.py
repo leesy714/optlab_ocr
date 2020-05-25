@@ -67,3 +67,59 @@ class Model(nn.Module):
         y = self.conv_cls(feature)
         return y, feature
 
+class Model1(nn.Module):
+
+    def __init__(self, classes):
+        super(Model1, self).__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(4, 16, kernel_size=(3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            res_block(16, 32),
+            res_block(32, 64),
+            res_block(64, 64),
+            res_block(64, 128)
+        )
+        self.conv_cls = nn.Sequential(
+            res_block(128, 64),
+            res_block(64, 32),
+            nn.Conv2d(32, classes + 1, kernel_size=1),
+        )
+
+        init_weights(self.conv.modules())
+        init_weights(self.conv_cls.modules())
+
+    def forward(self, x):
+        feature = self.conv(x)
+        y = self.conv_cls(feature)
+        return y, feature
+
+class Model2(nn.Module):
+
+    def __init__(self, classes):
+        super(Model2, self).__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(4, 16, kernel_size=(3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            res_block(16, 32),
+            res_block(32, 32),
+            res_block(32, 64),
+            res_block(64, 64),
+            res_block(64, 128)
+        )
+        self.conv_cls = nn.Sequential(
+            res_block(128, 64),
+            res_block(64, 32),
+            nn.Conv2d(32, classes + 1, kernel_size=1),
+        )
+
+        init_weights(self.conv.modules())
+        init_weights(self.conv_cls.modules())
+
+    def forward(self, x):
+        feature = self.conv(x)
+        y = self.conv_cls(feature)
+        return y, feature
