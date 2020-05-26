@@ -21,7 +21,7 @@ def load_model(classes, path="weight/Model3.pth"):
     model.load_state_dict(torch.load(path)["state_dict"])
     return model
 
-def load_test_data(num_data=20):
+def load_test_data(num_data=100):
     data = Data()
     data_len = len(data)
     test_num = int(data_len * 0.1)
@@ -69,8 +69,12 @@ def test(classes=9):
 
         argmax = argmax.cpu().data.numpy()
         imgs = imgs.squeeze().cpu().data.numpy()
-        crafts = crafts.squeeze().cpu().data.numpy()
-        bbox, argmax, img, craft = bbox[0], argmax[0], imgs[0], crafts
+        craft = crafts.squeeze().cpu().data.numpy()
+        ys = ys.squeeze().cpu().data.numpy()
+        bbox, argmax, img = bbox[0], argmax[0], imgs[0]
+
+        np.save("./res/model/{:06d}_true.npy".format(file_num),  ys)
+        np.save("./res/model/{:06d}_pred.npy".format(file_num),  argmax)
         img = load_origin_img(file_num)
 
         craft = np.clip(craft * 255, 0, 255).astype(np.uint8)
