@@ -12,7 +12,7 @@ from tqdm import tqdm
 import logging
 
 from data import Data
-from model import Model2 as Model
+from model import Model3 as Model
 from focal_loss import FocalLoss
 from optimizer import RAdam
 
