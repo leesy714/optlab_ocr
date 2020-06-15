@@ -62,15 +62,15 @@ class Perspective(Transform):
 #         print(self.origin.sum())
 
         # Base img 받을 변수 필요 (self.base)
-        if channel > 1:
-            imgBase = cv2.imread(base)
-            print(base)
-            print(imgBase.shape)
-            imgBase = cv2.cvtColor(imgBase, cv2.COLOR_BGR2BGRA)
-            imgBase = cv2.resize(imgBase, dsize=(self.width, self.height), interpolation=cv2.INTER_AREA)
-        else:
-            imgBase = np.zeros((self.height, self.width), np.uint8)
-
+        #if channel > 1:
+        #    imgBase = cv2.imread(base)
+        #    imgBase = cv2.cvtColor(imgBase, cv2.COLOR_BGR2BGRA)
+        #    imgBase = cv2.resize(imgBase, dsize=(self.width, self.height), interpolation=cv2.INTER_AREA)
+        #else:
+        #    imgBase = np.zeros((self.height, self.width), np.uint8)
+        # TODO: temporal black base image
+        shape = (self.height, self.width, 3) if channel > 1 else (self.height, self.width)
+        imgBase = np.zeros(shape, np.uint8)
         # Distort perspective
         pts1 = np.float32([[0,0],[self.width,0],[0,self.height],[self.width,self.height]])
 
