@@ -195,14 +195,16 @@ class Train:
                                 test_loss=float(test_loss),
                               accuracy=float(acc), recall=float(rec), precision=float(pre),
                               accuracy_bbox=float(acc_box))
+                save_dict = dict(
+                    state_dict = self.model.module.state_dict(),
+                    epoch=epoch,
+                    train_loss=train_loss,
+                    vali_loss=vali_loss,
+                )
+                torch.save(save_dict, os.path.join('weight', self.model_name+".pth"))
+
             self.save(res)
-            save_dict = dict(
-                state_dict = self.model.module.state_dict(),
-                epoch=epoch,
-                train_loss=train_loss,
-                vali_loss=vali_loss,
-            )
-            torch.save(save_dict, os.path.join('weight', self.model_name+".pth"))
+
 
 if __name__ == "__main__":
     fire.Fire(Train)
