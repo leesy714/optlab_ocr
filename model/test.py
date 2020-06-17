@@ -23,7 +23,7 @@ sys.path.append("../data")
 from craft import CRAFT
 
 
-device = 'cuda:1'
+device = 'cuda:0'
 
 def load_model(classes, path="weight/Model3.pth"):
     model = Model(classes)
@@ -68,7 +68,7 @@ def craft_inference(net, image):
 
 def load_craft_model():
     net = CRAFT()
-    net.load_state_dict(copyStateDict(torch.load("../data/weight/craft_mlt_25k.pth")))
+    net.load_state_dict(copyStateDict(torch.load("../data/weights/craft_mlt_25k.pth")))
     net = net.cuda()
     net = torch.nn.DataParallel(net)
     cudnn.benchmark = False
@@ -86,15 +86,24 @@ def test(classes=9, img_path="test"):
         if not file_num.endswith("jpg"):
             continue
         img = load_origin_img(os.path.join(img_path, file_num))
-        img = cv2.resize(img, dsize=(960, 1280), interpolation=cv2.INTER_LINEAR)
-        img = img.reshape(1, 1280, 960, 3)
-        craft = craft_inference(craft_model, img)
-        #print(craft.size(), img.shape)
-        img_ipt = cv2.resize(img, dsize=(480, 640), interpolation=cv2.INTER_LINEAR)
-        norm_img = normalizeMeanVariance(img)
-        _img = torch.from_numpy(norm_img).permute(0, 3, 1, 2)
+        img = img[:1280*3, :960*3, :]
+        H, W, C = img.shape
+        _H = H // 6
+        _W = W // 6
+        _img = np.zeros((_H, _W, C))
+        for i in range(3):
+            _img[:, :, i] = img[:_H*6, :_W*6, i].reshape(_H, 6, _W, 6).mean(axis=(1, 3))
+        img = _img
+        img_craft = cv2.resize(img, dsize=(960, 1280), interpolation=cv2.INTER_AREA)
+        img_craft = img_craft.reshape(1, 1280, 960, 3)
+        craft = craft_inference(craft_model, img_craft)
+        img_ipt = cv2.resize(img, dsize=(480, 640), interpolation=cv2.INTER_AREA)
+        img_ipt = normalizeMeanVariance(img_ipt)
+        img_ipt = img_ipt.reshape(1, 640, 480, 3)
+        _img = torch.from_numpy(img_ipt).permute(0, 3, 1, 2)
         _img = _img.to(device)
         craft = craft.to(device)
+        craft = craft.view(1, 1, 640, 480)
         x = torch.cat((_img, craft), dim=1)
         pred, _ = model(x)
         pred = pred.permute(0, 2, 3, 1)
@@ -112,6 +121,7 @@ def test(classes=9, img_path="test"):
         argmax = cv2.applyColorMap(argmax, cv2.COLORMAP_JET)
         cv2.imwrite("./test/res/{}_craft.png".format(file_num), craft)
         cv2.imwrite("./test/res/{}_pred.png".format(file_num), argmax)
+        cv2.imwrite("./test/res/{}_resize.png".format(file_num), img)
 
 if __name__ == "__main__":
     test()
