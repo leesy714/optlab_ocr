@@ -189,7 +189,7 @@ class Train:
             print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}, box_acc: {:.4}".format(train_loss, vali_loss, rec, acc_box))
             if vali_loss < tot_vali_loss:
                 tot_vali_loss = vali_loss
-                test_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
+                test_loss, acc, rec, pre, acc_box = self.validate(epoch, self.test_loader, loss_func)
 
                 res["best"] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
                                 test_loss=float(test_loss),

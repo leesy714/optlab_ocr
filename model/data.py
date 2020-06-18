@@ -56,8 +56,15 @@ class Data(Dataset):
 
         self.data_len = len(os.listdir(self.ipt_dir))
 
+    def noise(self, img):
+        img = img.astype(np.float32)
+        img += np.random.randn(*img.shape) * 60
+        img = np.clip(img, 0, 255).astype(np.uint8)
+        return img
+
     def __getitem__(self, idx):
         base = cv2.imread(os.path.join(self.base_dir, "{:06d}".format(idx)+".jpg"))
+        base = self.noise(base)
         x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
         y = np.load(os.path.join(self.opt_dir, "{:06d}".format(idx)+".npy"))
 

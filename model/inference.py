@@ -13,7 +13,7 @@ from model import Model3 as Model
 from train import accuracy, recall, precision, accuracy_bbox
 
 
-device = 'cuda:0'
+device = 'cuda:1'
 
 
 def load_model(classes, path="weight/Model3.pth"):
@@ -44,11 +44,11 @@ def test(classes=9):
     model.to(device)
     model.eval()
 
-    test_loader = load_test_data()
+    test_loader = load_test_data(500)
     if not os.path.exists("res/model"):
         os.makedirs("res/model")
 
-
+    accs, recs, pres, acc_boxs = 0.0, 0.0, 0.0, 0.0
     for crafts, ys, imgs, file_num in test_loader:
         file_num = int(file_num[0])
         imgs = imgs.permute(0, 3, 1, 2)
@@ -64,9 +64,13 @@ def test(classes=9):
         acc = accuracy(ys.view(-1, 1), argmax.view(-1, 1))
         rec = recall(ys.view(-1, 1), argmax.view(-1, 1))
         pre = precision(ys.view(-1, 1), argmax.view(-1, 1))
-        print("[file-{:06d}] acc: {:.4}, rec: {:.4}, pre: {:.4}, acc_box: {:.4}".format(
-            file_num, float(acc), float(rec), float(pre), float(acc_box)))
-
+        accs += float(acc)
+        recs += float(rec)
+        pres += float(pre)
+        acc_boxs += float(acc_box)
+        #print("[file-{:06d}] acc: {:.4}, rec: {:.4}, pre: {:.4}, acc_box: {:.4}".format(
+        #    file_num, float(acc), float(rec), float(pre), float(acc_box)))
+        continue
         argmax = argmax.cpu().data.numpy()
         imgs = imgs.squeeze().cpu().data.numpy()
         craft = crafts.squeeze().cpu().data.numpy()
@@ -84,6 +88,10 @@ def test(classes=9):
         cv2.imwrite("./res/model/{:06d}_base.png".format(file_num), img)
         cv2.imwrite("./res/model/{:06d}_pred.png".format(file_num), argmax)
         cv2.imwrite("./res/model/{:06d}_craft.png".format(file_num), craft)
+
+    data_len = len(test_loader)
+    print("[TOTAL] acc: {:.4}, rec: {:.4}, pre: {:.4}, acc_box: {:.4}".format(
+        accs / data_len, recs/data_len, pres/data_len, acc_boxs/data_len))
 
 if __name__ == "__main__":
     test()
