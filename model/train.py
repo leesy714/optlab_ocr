@@ -63,7 +63,7 @@ def accuracy_bbox(y_true, y_pred, bboxes):
 class Train:
 
     def __init__(self, classes=9, batch_size=8, loss_gamma=0.1, loss_alpha=0.4,
-                 learning_rate=1e-4, epochs=10):
+                 learning_rate=1e-4, epochs=10, load_model=False):
         """
         :param classes: number of classes except background
         :param batch_size: training dataset batch size
@@ -71,6 +71,7 @@ class Train:
         :param loss_alpha: alpha value in focal loss
         :param learning_rate: Optimizer learning_rate
         :param epochs: training_epochs
+        :param load_model: model pretrain model to restart model training
         """
 
         self.classes = classes
@@ -100,8 +101,17 @@ class Train:
             self.model = nn.DataParallel(self.model)
         self.model = self.model.to(device)
 
+        self.optimizer = RAdam(self.model.parameters(), lr=self.learning_rate)
+        self.save_path = os.path.join('weight', self.model_name+".pth")
+        self.start_epoch = 0
 
-    def train(self, epoch, loss_func, optimizer):
+        if load_model:
+            checkpoint = torch.load(self.save_path)
+            self.start_epoch = checkpoint["epoch"]
+            self.model.module.load_state_dict(checkpoint["model_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+    def train(self, epoch, loss_func):
         self.model.train()
 
         total_loss = torch.Tensor([0])
@@ -114,11 +124,11 @@ class Train:
             ys = ys.to(device)
             crafts = crafts.to(device)
             x = torch.cat((imgs, crafts), dim=1)
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
             pred, _ = self.model(x)
             loss = loss_func(pred, ys)
             loss.backward()
-            optimizer.step()
+            self.optimizer.step()
             batch_loss = loss.item()
             total_loss += batch_loss
             pbar.set_postfix(train_loss=batch_loss)
@@ -175,13 +185,12 @@ class Train:
         alpha = [1-self.loss_alpha for _ in range(self.classes + 1)]
         alpha[0] = self.loss_alpha
         loss_func = FocalLoss(gamma=self.loss_gamma, alpha=alpha)
-        optimizer = RAdam(self.model.parameters(), lr=self.learning_rate)
         print(self.model)
         print("parameters: ",self.count_parameters())
         res = {}
         tot_vali_loss = np.inf
-        for epoch in range(self.epochs):
-            train_loss = self.train(epoch, loss_func, optimizer)
+        for epoch in range(self.start_epoch, self.epochs):
+            train_loss = self.train(epoch, loss_func)
             vali_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
             res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
                               accuracy=float(acc), recall=float(rec), precision=float(pre),
@@ -196,12 +205,13 @@ class Train:
                               accuracy=float(acc), recall=float(rec), precision=float(pre),
                               accuracy_bbox=float(acc_box))
                 save_dict = dict(
-                    state_dict = self.model.module.state_dict(),
+                    model_state_dict = self.model.module.state_dict(),
+                    optimizer_state_dict = self.optimizer.state_dict(),
                     epoch=epoch,
                     train_loss=train_loss,
                     vali_loss=vali_loss,
                 )
-                torch.save(save_dict, os.path.join('weight', self.model_name+".pth"))
+                torch.save(save_dict, self.save_path)
 
             self.save(res)
 
