@@ -9,11 +9,11 @@ class Transform(metaclass=abc.ABCMeta):
         self.width = width
         self.height = height
 
-    @abstractmethod
+    @abc.abstractmethod
     def transform_image(self, image):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def transform_points(self, points):
         pass
 
@@ -23,7 +23,7 @@ class Shift(Transform):
         """
         :param spacing: length of each square pixel
         """
-        super().__init__(width, height, verbose)
+        super().__init__(width, height)
         self.spacing = spacing
         self.is_horizon = is_horizon
         if not self.is_horizon:
@@ -142,7 +142,7 @@ class Curve(Shift):
 
 class Shadow(Transform):
 
-    def __init__(self, width, height, spacing=20, sources=[(0, 0)]):
+    def __init__(self, width, height, spacing=20, focus=100, sources=[(0, 0)]):
         """
         :param width: width of the document
         :param height: height of the document
@@ -152,8 +152,9 @@ class Shadow(Transform):
         """
         super().__init__(width, height)
         self.spacing = spacing
+        self.focus = focus
         assert len(sources) > 0, "at least one light source is required"
-        self.sources = sources
+        self.sources = [(x * self.width, y * self.height) for x, y in sources]
 
     def get_regularizer(self):
         max_norm = 0.0
@@ -162,7 +163,7 @@ class Shadow(Transform):
             norms = [(width-x)**2 + (height-y)**2 for x, y in self.sources]
             norm = sum(norms)
             max_norm = max(max_norm, norm)
-        return 150.0 / max_norm
+        return 10.0 / max_norm
 
     def transform_points(self, points):
         return points
@@ -178,7 +179,7 @@ class Shadow(Transform):
                 heights = slice(h, min(h+self.spacing, self.height))
                 norms = [(w-x)**2 + (h-y)**2 for x, y in self.sources]
                 norm = sum(norms)
-                origin[heights, widths, :] -= int(regularizer * norm)
+                origin[heights, widths, :] -= int(self.focus / (norm * regularizer + 1))
         origin = origin.clip(min=0, max=255).astype(np.uint8)
         return origin
 
@@ -205,7 +206,7 @@ def option_reader(transformType, option):
 
     elif transformType is "2B":
         pos, strength = option.split("-")
-        kwargs["focus"] = 50 if strength is "s" else 25
+        kwargs["focus"] = 100 if strength is "s" else 50
         if pos is "l":
             kwargs["sources"] = [(0.0, 0.5)]
         elif pos is "lt":
@@ -238,19 +239,60 @@ def transformImage(image, coords, transformType, option):
         raise NotImplementedError
 
     elif transformType is "1C":
-        tran = Curve(width=width, height=height, spacing=40, **kwrags)
+        tran = Curve(width=width, height=height, spacing=40, **kwargs)
 
     elif transformType is "1D":
-        tran = Folded(width=width, height=height, spacing=40, **kwrags)
+        tran = Folded(width=width, height=height, spacing=40, **kwargs)
 
     elif transformType is "2A":
         raise NotImplementedError
 
     elif transformType is "2B":
-        tran = Shadow(width=width, height=height, spacing=40, **kwrags)
+        tran = Shadow(width=width, height=height, spacing=40, **kwargs)
 
     assert isinstance(tran, Transform)
-    transImage = tran.run(image)
+    transImage = tran.transform_image(image)
     transCoords = tran.transform_points(coords)
 
     return transImage, transCoords
+
+def test():
+    import os
+    import tqdm
+    if not os.path.exists("test_api"):
+        os.makedirs("test_api")
+    origin = cv2.imread("sample1.png")
+    origin = cv2.resize(origin, dsize=(480, 640))
+    coords = np.array([[[0, 0], [1, 0], [1, 1] ,[0, 1]]])
+
+    # 1A
+    print("START TRANSFORM 1A")
+    # 1B
+    print("START TRANSFORM 1B")
+    # 1C
+    print("START TRANSFORM 1C")
+    options = ["long-s", "long-w", "short-s", "short-w"]
+    for option in tqdm.tqdm(options):
+        trans_image, trans_coords = transformImage(origin, coords, "1C", option)
+        assert coords.shape == (1, 4, 2)
+        cv2.imwrite("test_api/1C_{}.png".format(option), trans_image)
+    # 1D
+    print("START TRANSFORM 1D")
+    options = ["long-s", "long-w", "short-s", "short-w"]
+    for option in tqdm.tqdm(options):
+        trans_image, trans_coords = transformImage(origin, coords, "1D", option)
+        assert coords.shape == (1, 4, 2)
+        cv2.imwrite("test_api/1D_{}.png".format(option), trans_image)
+    # 2A
+    print("START TRANSFORM 2A")
+    # 2B
+    print("START TRANSFORM 2B")
+    options = ["l-s", "l-w", "lt-s", "lt-w", "t-s", "t-w", "rt-s", "rt-w",
+               "r-s", "r-w", "rb-s", "rb-w", "b-s", "b-w", "lb-s", "lb-w"]
+    for option in tqdm.tqdm(options):
+        trans_image, trans_coords = transformImage(origin, coords, "2B", option)
+        assert coords.shape == (1, 4, 2)
+        cv2.imwrite("test_api/2B_{}.png".format(option), trans_image)
+
+if __name__ == "__main__":
+    test()
