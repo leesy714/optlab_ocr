@@ -193,14 +193,23 @@ class Pipeline:
             img = cv2.rectangle(img, xy, to_xy, (0,255,0),2)
         return  img
 
-    def effect(self, tran, img, y):
+    def effect(self, tran, img, y, bbox):
         assert isinstance(tran, Transform), "Inherit Transform class"
         img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
         y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
-        return img, y
+        bbox = tran.transform_points(bbox)
+        return img, y, bbox
 
     def transform(self, img, y, bbox):
         img = self.noise_generate(img.copy())
+        points, labels = [], []
+        for idx, x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
+            points.append((x1, y1))
+            points.append((x2, y2))
+            points.append((x3, y3))
+            points.append((x4, y4))
+            labels.append(idx)
+        bbox = points
         mode = random.randint(0, 3)
 
         if mode == 4:
@@ -219,25 +228,17 @@ class Pipeline:
                           is_horizon=(mode%4==1))
 
         y = cv2.resize(y, (self.width, self.height))
-        img, y = self.effect(tran, img, y)
-        if np.random.randint(10) == 0:
+        img, y, bbox = self.effect(tran, img, y, bbox)
+        if np.random.randint(8) == 0:
             per = Perspective(self.width, self.height)
-            img, y = self.effect(per, img, y)
+            img, y, bbox = self.effect(per, img, y, bbox)
 
         rot = Rotation(self.width, self.height)
-        img, y = self.effect(rot, img, y)
+        img, y, bbox = self.effect(rot, img, y, bbox)
         y = np.squeeze(y)
         y = cv2.resize(y, (self.width // 2, self.height // 2))
         y = y.transpose(1, 0).astype(np.uint8)
-        points, labels = [], []
-        for idx, x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
-            points.append((x1, y1))
-            points.append((x2, y2))
-            points.append((x3, y3))
-            points.append((x4, y4))
-            labels.append(idx)
-        bbox = tran.transform_points(points)
-        bbox = rot.transform_points(bbox)
+
         bbox = [(labels[i], *bbox[4*i], *bbox[4*i+1], *bbox[4*i+2], *bbox[4*i+3]) for i in range(len(bbox)//4)]
         #heatmap_img = np.clip(y.transpose(1, 0) * (255 /9), 0 ,255).astype(np.uint8)
         #heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)

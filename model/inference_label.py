@@ -9,20 +9,20 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from data import Data, LabelData
-from model import Model3 as Model
+from model import Model5 as Model
 from train import accuracy, recall, precision, accuracy_bbox
 
 
 device = 'cuda:1'
 
 
-def load_model(classes, path="weight/Model3.pth"):
+def load_model(classes, path="weight/Model5.pth"):
     model = Model(classes)
     model.load_state_dict(torch.load(path)["model_state_dict"])
     return model
 
-def load_test_data(num_data=100):
-    data = Data()
+def load_test_data(num_data=100, classes=9):
+    data = LabelData(classes)
     data_len = len(data)
     test_num = int(data_len * 0.1)
     test_num = min(test_num, num_data)
@@ -52,20 +52,21 @@ def test(classes=9):
     model.to(device)
     model.eval()
 
-    test_loader = load_test_data(100)
+    test_loader = load_test_data(100, classes)
     if not os.path.exists("res/model"):
         os.makedirs("res/model")
 
     accs, recs, pres, acc_boxs = 0.0, 0.0, 0.0, 0.0
-    for crafts, ys, imgs, file_num in test_loader:
+    for crafts, ys, labels, imgs, file_num in test_loader:
         file_num = int(file_num[0])
         imgs = imgs.permute(0, 3, 1, 2)
         imgs = imgs.to(device)
         ys = ys.to(device)
         crafts = crafts.to(device)
-        x = torch.cat((imgs, crafts), dim=1)
-        pred, _ = model(x)
-        #pred, _ = model(imgs, crafts)
+        labels = labels.to(device)
+        #x = torch.cat((imgs, crafts), dim=1)
+        #pred, _ = model(x)
+        pred, _ = model(imgs, crafts, labels)
         pred = pred.permute(0, 2, 3, 1)
         _, argmax = pred.max(dim=3)
         bbox = [load_bbox(b) for b in [file_num]]

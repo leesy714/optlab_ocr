@@ -27,7 +27,7 @@ device = 'cuda:0'
 
 def load_model(classes, path="weight/Model3.pth"):
     model = Model(classes)
-    model.load_state_dict(torch.load(path)["state_dict"])
+    model.load_state_dict(torch.load(path)["model_state_dict"])
     return model
 
 def load_origin_img(file_path):
