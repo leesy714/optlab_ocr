@@ -8,8 +8,10 @@ from os.path import join as pjoin
 from PIL import Image, ImageDraw, ImageFont
 import cv2
 
+from base_transform import Transform
 from curve import Curve
 from folded import Folded
+from rotation import Rotation
 from perspective import Perspective
 
 class Pipeline:
@@ -22,6 +24,7 @@ class Pipeline:
         self.img_postfix = ".jpg"
         self.y_postfix = ".npy"
         self.bbox_postfix = ".pickle"
+        self.annot_postfix = '.xml'
 
     def load_files(self):
         origin_file_list = os.listdir(pjoin(self.res_path, "origin"))
@@ -87,7 +90,7 @@ class Pipeline:
         return img
 
     def blur(self, img):
-        sigma = np.random.randint(1, 3)
+        sigma = np.random.random() * 2.0 + 0.01
         img_blur = cv2.GaussianBlur(img, (0, 0), sigma)
         return img_blur
 
@@ -119,7 +122,6 @@ class Pipeline:
         coords = np.random.randint(0, col - 1, num_lines)
         for c in coords:
             out[:,c]=1
-
         return out
 
     def noise_generate(self, img):
@@ -145,10 +147,71 @@ class Pipeline:
                 raise
         return img
 
+    def annotation(self, img, bb, idx):
+        string = ""
+        string += "<annotation>\n"
+        string += "\t<folder>png_noise</folder>\n"
+        string += "\t<filename>{}.png</filename>\n".format(idx)
+        string += "\t<size>\n"
+        string += "\t\t<width>{}</width>\n".format(img.shape[1])
+        string += "\t\t<height>{}</height>\n".format(img.shape[0])
+        string += "\t\t<depth>{}</depth>\n".format(img.shape[2])
+
+        string += "\t</size>\n"
+
+
+        for (xmin,ymin),(xmax,ymax), field in bb:
+            string += "\t<object>\n"
+            string += "\t\t<name>{}</name>\n".format(field)
+            string += "\t\t<pose>Unspecified</pose>\n"
+            string += "\t\t<truncated>0</truncated>\n"
+            string += "\t\t<difficult>0</difficult>\n"
+            string += "\t\t<bndbox>\n"
+            string += "\t\t\t<xmin>{}</xmin>\n".format(xmin)
+            string += "\t\t\t<ymin>{}</ymin>\n".format(ymin)
+            string += "\t\t\t<xmax>{}</xmax>\n".format(xmax)
+            string += "\t\t\t<ymax>{}</ymax>\n".format(ymax)
+            string += "\t\t</bndbox>\n"
+            string += "\t</object>\n"
+
+        string += "</annotation>\n"
+        return string
+
+    def bbox_transform(self, bb):
+        points = []
+        for f, x1, y1, x2, y2, x3,y3, x4, y4 in bb:
+            xmin = min(x1,x2,x3,x4)
+            ymin = min(y1,y2,y3,y4)
+            xmax = max(x1,x2,x3,x4)
+            ymax = max(y1,y2,y3,y4)
+            points.append(((xmin,ymin),(xmax,ymax),f))
+        return points
+
+    def bbox_image(self, img, bb):
+        img = img.copy()
+        for xy, to_xy, field in bb:
+            img = cv2.rectangle(img, xy, to_xy, (0,255,0),2)
+        return  img
+
+    def effect(self, tran, img, y, bbox):
+        assert isinstance(tran, Transform), "Inherit Transform class"
+        img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
+        y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
+        bbox = tran.transform_points(bbox)
+        return img, y, bbox
+
     def transform(self, img, y, bbox):
         img = self.noise_generate(img.copy())
-        mode = random.randint(0, 4)
-        
+        points, labels = [], []
+        for idx, x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
+            points.append((x1, y1))
+            points.append((x2, y2))
+            points.append((x3, y3))
+            points.append((x4, y4))
+            labels.append(idx)
+        bbox = points
+        mode = random.randint(0, 3)
+
         if mode == 4:
             tran = Perspective(self.width, self.height)
         elif mode % 2 == 0:
@@ -163,26 +226,24 @@ class Pipeline:
             tran = Folded(width=self.width, height=self.height, spacing=40,
                           up_slope=folded_up/100, down_slope=folded_down/100,
                           is_horizon=(mode%4==1))
-        
-        img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
+
         y = cv2.resize(y, (self.width, self.height))
-        y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
+        img, y, bbox = self.effect(tran, img, y, bbox)
+        if np.random.randint(8) == 0:
+            per = Perspective(self.width, self.height)
+            img, y, bbox = self.effect(per, img, y, bbox)
+
+        rot = Rotation(self.width, self.height)
+        img, y, bbox = self.effect(rot, img, y, bbox)
+        y = np.squeeze(y)
         y = cv2.resize(y, (self.width // 2, self.height // 2))
         y = y.transpose(1, 0).astype(np.uint8)
-        points, labels = [], []
-        for idx, x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
-            points.append((x1, y1))
-            points.append((x2, y2))
-            points.append((x3, y3))
-            points.append((x4, y4))
-            labels.append(idx)
-        bbox = tran.transform_points(points)
+
         bbox = [(labels[i], *bbox[4*i], *bbox[4*i+1], *bbox[4*i+2], *bbox[4*i+3]) for i in range(len(bbox)//4)]
-        
-#         heatmap_img = np.clip(y.transpose(1, 0) * (255 /9), 0 ,255).astype(np.uint8)
-#         heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
-#         cv2.imwrite("label_pers.png", heatmap_img)
-        
+        #heatmap_img = np.clip(y.transpose(1, 0) * (255 /9), 0 ,255).astype(np.uint8)
+        #heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+        #cv2.imwrite("label_pers_ori.png", img)
+        #cv2.imwrite("label_pers.png", heatmap_img)
         return img, y, bbox
 
     def save(self, img, y, bbox, idx=0):
@@ -190,13 +251,20 @@ class Pipeline:
         origin_path = pjoin(self.res_path, "origin_noise")
         label_path = pjoin(self.res_path, "origin_noise_label")
         bbox_path = pjoin(self.res_path, "origin_noise_bbox")
-        for path in [origin_path, label_path, bbox_path]:
+        annot_path = pjoin(self.res_path, "origin_noise_annotation")
+        bbox_tran = self.bbox_transform(bbox)
+        annot = self.annotation(img, bbox_tran, idx)
+
+        for path in [origin_path, label_path, bbox_path, annot_path]:
             if not os.path.exists(path):
                 os.makedirs(path)
+
         cv2.imwrite(pjoin(origin_path, idx+self.img_postfix), img)
         np.save(pjoin(label_path, idx+self.y_postfix),  y)
         with open(pjoin(bbox_path, idx+self.bbox_postfix), 'wb') as fout:
             pickle.dump(bbox, fout)
+        with open(pjoin(annot_path, idx+self.annot_postfix),'w') as fout:
+            fout.write(annot)
 
     def run(self):
         for file_name in tqdm.tqdm(self.load_files()):
