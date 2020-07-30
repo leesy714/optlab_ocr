@@ -266,7 +266,7 @@ class Perspective(Transform):
         return t_points
     
     # transform_image
-    def transform_image(self, ipt, channel=3, ipt_format="file", opt="res_pers.png", opt_format="file", base="Arles-15t.jpg", base_format="file"):
+    def transform_image(self, ipt, channel=3, base="Arles-15t.jpg"):
         
         origin = cv2.resize(ipt, dsize=(self.width, self.height))
         if channel > 1:

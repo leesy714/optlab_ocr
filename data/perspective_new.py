@@ -86,7 +86,7 @@ class Perspective(Transform):
     # transform_image
     def transform_image(self, channel, ipt, ipt_format="file", opt="res_pers.png", opt_format="file", base="Arles-15t.jpg", base_format="file"):
         
-        #self.load_ipt(ipt, ipt_format)
+        self.load_ipt(ipt, ipt_format)
         if channel > 1:
             self.origin = cv2.cvtColor(self.origin, cv2.COLOR_BGR2BGRA)
         self.origin = cv2.resize(self.origin, dsize=(self.width, self.height))
