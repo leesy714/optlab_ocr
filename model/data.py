@@ -2,6 +2,7 @@ import os
 import sys
 import cv2
 import csv
+import json
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 
@@ -137,38 +138,62 @@ class RealData(Dataset):
     CANVAS_SIZE = 1280
     MAG_RATIO = 0.5
 
-    def __init__(self, is_train=True):
+    def __init__(self, is_train=True, label=None):
         self.width = 480
         self.height = 640
 
         folder = "train" if is_train else "test"
 
-        self.label = dict()
-        self.label_num = 1
+        self.boxing = self.get_boxing()
+        images, labels, bboxes, crafts, _sizes = dict(), dict(), dict(), dict(), dict()
+        base_dir = "../data/AugmentedImage"
 
-        images, labels, bboxes, _sizes = dict(), dict(), dict(), dict()
-        base_dir = "../data/temp_imgs"
+        with open(os.path.join(base_dir, "doc_0001_p01.json")) as fin:
+            self.label = json.load(fin)
+
+        base_dir = "../data/AugmentedImage/doc_0001"
+
         for dpi in ["200", "300"]:
             for noise in ["BW", "Color", "Gray"]:
-                path = os.path.join(base_dir, folder, dpi, noise)
+                path = os.path.join(base_dir, folder, dpi, noise, "input")
+                files = sorted(os.listdir(path), reverse=True)
+                for file_name in files:
+                    if "jpg" not in file_name:
+                        continue
+                    name = file_name.split(".")[0]
+                    img = cv2.imread(os.path.join(path, file_name))
+                    _sizes[name] = img.shape
+                    img = cv2.resize(img, dsize=(self.width, self.height), interpolation=cv2.INTER_LINEAR)
+                    img = img.reshape(1, *img.shape)
+                    img = normalizeMeanVariance(img)
+                    img = img.squeeze()
+                    images[name] = img
+
+                path = os.path.join(base_dir, folder, dpi, noise, "answer")
                 files = sorted(os.listdir(path), reverse=True)
                 for file_name in files:
                     name = file_name.split(".")[0]
-                    if "주민등록등본" in name:
-                        continue
-                    if file_name.endswith("jpg"):
-                        img = cv2.imread(os.path.join(path, file_name))
-                        _sizes[name] = img.shape
-                        img = cv2.resize(img, dsize=(self.width, self.height), interpolation=cv2.INTER_LINEAR)
-                        img = img.reshape(1, *img.shape)
-                        img = normalizeMeanVariance(img)
-                        img = img.squeeze()
-                        images[name] = img
+                    label, bbox = self.boxing_info(os.path.join(path, file_name), _sizes[name])
+                    #labels[name] = label.astype(np.int64)
+                    bboxes[name] = bbox
+                    labels[name] = label
 
-                    elif file_name.endswith("csv"):
-                        label, bbox = self.boxing_info(os.path.join(path, file_name), _sizes[name])
-                        labels[name] = label.astype(np.int64)
-                        bboxes[name] = bbox
+                #path = os.path.join(base_dir, folder, dpi, noise, "label")
+                #files = sorted(os.listdir(path), reverse=True)
+                #for file_name in files:
+                #    name = file_name.split(".")[0]
+                #    label = np.load(os.path.join(path, file_name))
+                #    print(label.shape)
+                #    label = np.expand_dims(label, axis=2)
+                #    label = cv2.resize(label, dsize=(self.height, self.width), interpolation=cv2.INTER_NEAREST)
+                #    labels[name] = label.astype(np.int64)
+
+                path = os.path.join(base_dir, folder, dpi, noise, "craft")
+                files = sorted(os.listdir(path), reverse=True)
+                for file_name in files:
+                    name = file_name.split(".")[0]
+                    craft = np.load(os.path.join(path, file_name))
+                    crafts[name] = craft.reshape(1, self.height, self.width)
 
         self.data_len = len(images)
         print("load images: ", self.data_len)
@@ -176,13 +201,44 @@ class RealData(Dataset):
         self.images = images
         self.labels = labels
         self.bboxes = bboxes
+        self.crafts = crafts
+
+    def _parse_field(self, fieldID):
+        token = fieldID.split("+")
+        front = token[0].split("#")
+        front = front[0].split("_")
+        if front[-1].isdigit():
+            key = "_".join(front[:-1])
+        else:
+            key = "_".join(front)
+
+        if len(token) > 1:
+            key = "{}_{}".format(key, token[1])
+        return key
+
+    def get_boxing(self):
+        classes = [
+            # x1, x2, y1, y2
+            (140, 340, 65, 90),
+            (40, 125, 147, 161),
+            (40, 125, 165, 180),
+            (40, 125, 192, 205),
+            (40, 125, 216, 230),
+            (40, 125, 240, 254),
+            (40, 125, 266, 280),
+            (40, 125, 345, 363),
+        ]
+        info = np.zeros((len(classes), self.height, self.width))
+        for i, (x1, x2, y1, y2) in enumerate(classes):
+            info[i, y1:y2, x1:x2] = 1
+        info = info.astype(np.float32)
+        return info
 
     def boxing_info(self, file_name, shape):
         label = np.zeros((self.height, self.width))
         h, w, c = shape
         h_ratio = h / self.height
         w_ratio = w / self.width
-        print(h, w, c, h_ratio, w_ratio)
 
         input_file = csv.DictReader(open(file_name))
         bbox = []
@@ -192,17 +248,19 @@ class RealData(Dataset):
                 fieldID = row["FieldID"]
                 if not fieldID:
                     continue
-                if fieldID not in self.label:
-                    self.label[fieldID] = self.label_num
-                    self.label_num = self.label_num + 1
+                #if fieldID not in self.label:
+                #    self.label[fieldID] = self.label_num
+                #    self.label_num = self.label_num + 1
 
                 x1, y1, x2, y2 = boxing.split(";")
                 x1, x2 = int(int(x1) / w_ratio), int(int(x2) / w_ratio)
                 y1, y2 = int(int(y1) / h_ratio), int(int(y2) / h_ratio)
-                label[y1:y2, x1:x2] = self.label[fieldID]
-                bbox.append((self.label[fieldID], x1, y1, x1, y2, x2, y2, x2, y1))
+                label[y1:y2, x1:x2] = self.label[self._parse_field(fieldID)]
+                bbox.append((self.label[self._parse_field(fieldID)], x1, y1, x1, y2, x2, y2, x2, y1))
         label = np.expand_dims(label, axis=2)
+        label = label.astype(np.int64)
         return label, bbox
+        #return bbox
 
     def get_bbox(self, idx):
         idx = int(idx)
@@ -211,7 +269,7 @@ class RealData(Dataset):
 
     def __getitem__(self, idx):
         name = self.mapper[idx]
-        return self.images[name], self.labels[name], idx
+        return self.images[name], self.crafts[name], self.labels[name], self.boxing, idx
 
     def __len__(self):
         return self.data_len
@@ -219,8 +277,15 @@ class RealData(Dataset):
 if __name__ == "__main__":
     real = RealData(is_train=False)
     loader = DataLoader(real, batch_size=2, shuffle=False, num_workers=4)
-    for images, labels, bboxes in loader:
+    for images, crafts, labels, boxing, bboxes in loader:
         print(images.size())
         print(labels.size())
+        print(boxing.size())
+        label = labels[0].numpy()
+        label = np.clip(label * (255 /15), 0 ,255)
+        heatmap_img = cv2.applyColorMap(label.astype(np.uint8), cv2.COLORMAP_JET)
+        cv2.imwrite("origin_label.png", heatmap_img)
+        cv2.imwrite("origin.png", images[0].numpy())
         print(bboxes)
+        break
 
