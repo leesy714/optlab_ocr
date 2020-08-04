@@ -91,14 +91,20 @@ class cornerFolded(Transform):
 
 class cornerCurved(Transform):
     
-    def __init__(self, width, height, sub_width=300, sub_height=300, shift_length=50, window_raise=100):
+    def __init__(self, width, height, sub_width=200, sub_height=200, shift_length=10, window_raise=50):
         super().__init__(width, height)
-        self.iter_folded = 3
+        
+        ################## 휘는 정도 조절을 위한 hyperparameter #################
+        
         self.sub_width = sub_width
         self.sub_height = sub_height
         self.shift_length = shift_length
         self.window_raise = window_raise
-        self.deg_ratio = 2/3
+        
+        self.deg_ratio = 1
+        self.iter_folded = 10
+        
+        #####################################################################
         
     def transform_points(self, points):
         return points
@@ -112,18 +118,13 @@ class cornerCurved(Transform):
         if degree == 'w':
             deg = self.deg_ratio
             
-        self.sub_width *= deg
-        self.sub_height *= deg
-        self.shift_length *= deg
-        self.window_raise *= deg
-        
-        for i in range(0,self.iter_folded):
+        for i in range(0,int(self.iter_folded*deg)):
             tran = cornerFolded(self.width, self.height, sub_width=int(self.sub_width), sub_height=int(self.sub_height), shift_length=int(self.shift_length))
             origin = tran.transform_image(ipt=origin, option=all_option)
             #cv2.imwrite('cornerCurved_sample_{}.png'.format(i), origin)
             self.sub_width += self.window_raise
             self.sub_height += self.window_raise
-            self.shift_length += self.window_raise/(5*deg)
+            self.shift_length += self.window_raise/10
             
         return origin
     
