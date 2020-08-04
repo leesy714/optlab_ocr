@@ -117,14 +117,18 @@ class cornerCurved(Transform):
         deg = 1
         if degree == 'w':
             deg = self.deg_ratio
-            
+        
+        sub_width = self.sub_width
+        sub_height = self.sub_height
+        shift_length = self.shift_length
+        
         for i in range(0,int(self.iter_folded*deg)):
-            tran = cornerFolded(self.width, self.height, sub_width=int(self.sub_width), sub_height=int(self.sub_height), shift_length=int(self.shift_length))
+            tran = cornerFolded(self.width, self.height, sub_width=int(sub_width), sub_height=int(sub_height), shift_length=int(shift_length))
             origin = tran.transform_image(ipt=origin, option=all_option)
             #cv2.imwrite('cornerCurved_sample_{}.png'.format(i), origin)
-            self.sub_width += self.window_raise
-            self.sub_height += self.window_raise
-            self.shift_length += self.window_raise/10
+            sub_width += self.window_raise
+            sub_height += self.window_raise
+            shift_length += self.window_raise/10
             
         return origin
     
@@ -133,16 +137,16 @@ if __name__ == "__main__":
     # 접기
     imgPers = cv2.imread('sample1.png')
     height, width = imgPers.shape[:2]
+    tran = cornerFolded(width, height)
     for option in ['lt-s', 'lt-w', 'rt-s', 'rt-w', 'lb-s', 'lb-w', 'rb-s', 'rb-w']:
-        tran = cornerFolded(width, height)
         image = tran.transform_image(ipt=imgPers, option=option)
         cv2.imwrite('cornerFolded_sample_{}.png'.format(option), image)
         
     # 말림
     imgPers = cv2.imread('sample1.png')
     height, width = imgPers.shape[:2]
+    tran = cornerCurved(width, height)
     for option in ['lt-s', 'lt-w', 'rt-s', 'rt-w', 'lb-s', 'lb-w', 'rb-s', 'rb-w']:
-        tran = cornerCurved(width, height)
         image = tran.transform_image(ipt=imgPers, option=option)
         cv2.imwrite('cornerCurved_sample_{}.png'.format(option), image)
         
