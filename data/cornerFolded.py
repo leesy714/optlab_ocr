@@ -137,7 +137,9 @@ if __name__ == "__main__":
     # 접기
     imgPers = cv2.imread('sample1.png')
     height, width = imgPers.shape[:2]
-    tran = cornerFolded(width, height)
+    print(height,width)
+    tran = cornerFolded(width, height, sub_width=int(min(width, height)/3), sub_height=int(min(width, height)/3),
+                        shift_length=int(min(width, height)/9))
     for option in ['lt-s', 'lt-w', 'rt-s', 'rt-w', 'lb-s', 'lb-w', 'rb-s', 'rb-w']:
         image = tran.transform_image(ipt=imgPers, option=option)
         cv2.imwrite('cornerFolded_sample_{}.png'.format(option), image)
@@ -145,7 +147,9 @@ if __name__ == "__main__":
     # 말림
     imgPers = cv2.imread('sample1.png')
     height, width = imgPers.shape[:2]
-    tran = cornerCurved(width, height)
+    
+    tran = cornerCurved(width, height, sub_width=int(min(width, height)/8), sub_height=int(min(width, height)/8),
+                        shift_length=int(min(width, height)/160) , window_raise=int(min(width, height)/32))
     for option in ['lt-s', 'lt-w', 'rt-s', 'rt-w', 'lb-s', 'lb-w', 'rb-s', 'rb-w']:
         image = tran.transform_image(ipt=imgPers, option=option)
         cv2.imwrite('cornerCurved_sample_{}.png'.format(option), image)
