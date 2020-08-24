@@ -40,7 +40,7 @@ class Shift(Transform):
                    for w in range(0, self.width, self.spacing)]
         return widths, heights
 
-    def transform_points(self, points):
+    def transform_points(self, points, option=""):
         if points is None:
             return None
         points = points.reshape(-1, 2)
@@ -63,7 +63,7 @@ class Shift(Transform):
                             [width + self.spacing + self.slide(h+1), +height + self.spacing],
                             [width + self.slide(h+1), height + self.spacing]], np.float32)
             mat = cv2.getPerspectiveTransform(src, dst)
-            
+
             point = np.array((*point, 1))
             t_point = np.dot(mat, point)
             t_points.append((int(t_point[0]), int(t_point[1])))
@@ -166,7 +166,7 @@ class Shadow(Transform):
             max_norm = max(max_norm, norm)
         return 10.0 / max_norm
 
-    def transform_points(self, points):
+    def transform_points(self, points, option=""):
         return points
 
     def transform_image(self, ipt, option, base="Arles-15t.jpg"):
@@ -198,28 +198,28 @@ class Perspective(Transform):
         self.width_ratio = width_ratio
         self.height_space_ratio = height_space_ratio
         self.width_space_ratio = height_space_ratio * width/height
-        
+
         self.mat = self.make_matrix(options)
-        
+
     def make_matrix(self, options):
-        
+
         # Distort perspective
         pts1 = np.float32([[0,0],[self.width,0],[0,self.height],[self.width,self.height]])
-        
+
         option, degree = options.split('-')[0], options.split('-')[1]
-        
+
         x = int(self.width*(1-self.width_ratio)/2)
         y = int(self.height*(1-self.height_ratio)/2)
         width = self.width_ratio*self.width
         height = self.height_ratio*self.height
-        
+
         if degree == "s":
-            deg = 1/16 
+            deg = 1/16
         elif degree == "w":
             deg = 1/8
         else:
             raise
-        
+
         if option == "lt":
             pts2 = np.float32([[x, y], [x + width*(1-deg), y + height*deg/2],
                                [x + width*deg/2, y + height*(1-deg)], [x + width, y + height]])
@@ -246,14 +246,13 @@ class Perspective(Transform):
                                [x, y + height*(1-deg)], [x+width, y + height]])
         else:
             raise
-        
+
         ################### rm lm ct cb의 경우 folded 적용하기 ##################
-        # Folded        
+        # Folded
         ######################################################################
         return cv2.getPerspectiveTransform(pts1, pts2)
-        
 
-    def transform_points(self, points):
+    def transform_points(self, points, option):
         points = points.reshape(-1, 2)
         points = [(x[0], x[1]) for x in points]
         t_points = []
@@ -264,10 +263,10 @@ class Perspective(Transform):
         t_points = np.array(t_points)
         t_points = t_points.reshape(-1, 4, 2)
         return t_points
-    
+
     # transform_image
     def transform_image(self, ipt, option, base="Arles-15t.jpg", channel=3):
-        
+
         origin = cv2.resize(ipt, dsize=(self.width, self.height))
         if channel > 1:
             origin = cv2.cvtColor(origin, cv2.COLOR_BGR2BGRA)
@@ -283,15 +282,15 @@ class Perspective(Transform):
             imgBase = cv2.resize(imgBase, dsize=(self.width, self.height), interpolation=cv2.INTER_AREA)
         #else:
         #    imgBase = np.zeros((self.height, self.width), np.uint8)
-        
+
         # 이미지 변형
-        
+
         origin = cv2.warpPerspective(origin, self.mat, (self.width,self.height), flags = cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue = [0, 0, 0, 0])
-        
+
         # 배경과 합치기
         x1, x2 = 0, self.width
         y1, y2 = 0, self.height
-        
+
         if channel > 1:
             alpha_p = origin[:, :, 3] / 255.0
         else:
@@ -303,37 +302,50 @@ class Perspective(Transform):
                 imgBase[y1:y2, x1:x2, c] = (alpha_p[y1:y2, x1:x2] * origin[y1:y2, x1:x2, c] + alpha_b[y1:y2, x1:x2] * imgBase[y1:y2, x1:x2, c])
         else:
             imgBase[y1:y2, x1:x2] = origin[y1:y2, x1:x2] + imgBase[y1:y2, x1:x2]
-        
+
         #cv2.imwrite(opt, imgBase)
         return imgBase
         #return self.save(imgBase, opt, opt_format)
 
 class cornerFolded(Transform):
     def __init__(self, width, height, sub_width=500, sub_height=500, shift_length=150):
-        super().__init__(width, height)        
+        super().__init__(width, height)
         ################### 접히는 길이 조절 ###################
         # 2337 1653 기준 hyper parmaeter (500 500 150)
         self.sub_width = sub_width
         self.sub_height = sub_height
-        
         ################### 접히는 정도 조절 ###################
         self.shift_length = shift_length
         self.deg_ratio = 1/3
         #####################################################
-        
-    def transform_points(self, points):
-        return points
-    
-    def transform_image(self, ipt, option, base="Arles-15t.jpg"):
-        origin = cv2.resize(ipt, dsize=(self.width, self.height))
+
+    def transform_points(self, points, option):
+        M, start_width, start_height, mul = self._get_perspective(option)
+        option, degree = option.split('-')
+        points = points.reshape(-1, 2)
+        points = [(x[0], x[1]) for x in points]
+        t_points = []
+        for point in points:
+            point = np.array((*point, 1))
+
+            t_point = point
+            if option == 'lt' or option == 'rb':
+                if mul*(point[0]+point[1]) <= mul*(self.sub_height+self.sub_width)/2:
+                    t_point = np.dot(M, point)
+            if option == 'rt' or option == 'lb':
+                if mul*(point[1]-point[0]) >= 0:
+                    t_point = np.dot(M, point)
+            t_points.append((int(t_point[0]), int(t_point[1])))
+        t_points = np.array(t_points)
+        t_points = t_points.reshape(-1, 4, 2)
+        return t_points
+
+    def _get_perspective(self, option):
         option, degree = option.split('-')[0], option.split('-')[1]
-        #print(option, degree)
         deg = 1
-        
         start_width = 0
         start_height = 0
         mul = 1
-        
         if option == 'lt':
             start_width = 0
             start_height = 0
@@ -349,13 +361,11 @@ class cornerFolded(Transform):
         if option == 'rb':
             start_width = self.width-self.sub_width
             start_height = self.height-self.sub_height
-            mul = -1        
-        
-        temp = origin[start_height:start_height+self.sub_height, start_width : start_width+self.sub_width, :].copy()
-        
+            mul = -1
+
         if degree == 'w':
             deg = self.deg_ratio
-        
+
         if option == 'lt' or option == 'rb':
             pts1 = np.array([[0, 0],
                              [self.sub_width, 0],
@@ -365,7 +375,7 @@ class cornerFolded(Transform):
                              [self.sub_width, 0],
                              [self.sub_width-self.shift_length*deg, self.sub_height-self.shift_length*deg],
                              [0, self.sub_height]], dtype = "float32")
-        
+
         if option == 'rt' or option == 'lb':
             pts1 = np.array([[0, 0],
                              [self.sub_width, 0],
@@ -375,14 +385,19 @@ class cornerFolded(Transform):
                              [self.sub_width-self.shift_length*deg, self.shift_length*deg],
                              [self.sub_width, self.sub_height],
                              [self.shift_length*deg, self.sub_height-self.shift_length*deg]], dtype = "float32")
-        
-        
+
         M = cv2.getPerspectiveTransform(pts1, pts2)
+        return M, start_width, start_height, mul
+
+    def transform_image(self, ipt, option, base="Arles-15t.jpg"):
+        origin = cv2.resize(ipt, dsize=(self.width, self.height))
+        M, start_width, start_height, mul = self._get_perspective(option)
+        temp = origin[start_height:start_height+self.sub_height, start_width : start_width+self.sub_width, :].copy()
         temp = cv2.warpPerspective(temp, M, (self.sub_width, self.sub_height))
-        
+
         # 합성
         out = origin.copy()
-        
+
         if option == 'lt' or option == 'rb':
             for i in range(0, self.sub_height):
                 for j in range(0, self.sub_width):
@@ -393,42 +408,58 @@ class cornerFolded(Transform):
                 for j in range(0, self.sub_width):
                     if mul*(j-i) >= 0:
                         out[start_height+i:start_height+i+1,start_width+j:start_width+j+1,:] = temp[i:i+1,j:j+1,:]
-        
         return out
-    
+
 class cornerCurved(Transform):
-    
+
     def __init__(self, width, height, sub_width=200, sub_height=200, shift_length=10, window_raise=50):
         super().__init__(width, height)
-        
+
         ################## 휘는 정도 조절을 위한 hyperparameter #################
         # 2337 1653 기준 hyper parmaeter (200 200 10 50)
         self.sub_width = sub_width
         self.sub_height = sub_height
         self.shift_length = shift_length
         self.window_raise = window_raise
-        
+
         self.deg_ratio = 1
         self.iter_folded = 10
-        
+
         #####################################################################
-        
-    def transform_points(self, points):
+
+    def transform_points(self, points, option):
+        all_option = option
+        option, degree = option.split('-')[0], option.split('-')[1]
+
+        deg = 1
+        if degree == 'w':
+            deg = self.deg_ratio
+
+        sub_width = self.sub_width
+        sub_height = self.sub_height
+        shift_length = self.shift_length
+
+        for i in range(0,int(self.iter_folded*deg)):
+            tran = cornerFolded(self.width, self.height, sub_width=int(sub_width), sub_height=int(sub_height), shift_length=int(shift_length))
+            points = tran.transform_points(points, option=all_option)
+            sub_width += self.window_raise
+            sub_height += self.window_raise
+            shift_length += self.window_raise/10
         return points
-    
+
     def transform_image(self, ipt, option, base="Arles-15t.jpg"):
         origin = cv2.resize(ipt, dsize=(self.width, self.height))
         all_option = option
         option, degree = option.split('-')[0], option.split('-')[1]
-        
+
         deg = 1
         if degree == 'w':
             deg = self.deg_ratio
-        
+
         sub_width = self.sub_width
         sub_height = self.sub_height
         shift_length = self.shift_length
-        
+
         for i in range(0,int(self.iter_folded*deg)):
             tran = cornerFolded(self.width, self.height, sub_width=int(sub_width), sub_height=int(sub_height), shift_length=int(shift_length))
             origin = tran.transform_image(ipt=origin, option=all_option)
@@ -436,9 +467,9 @@ class cornerCurved(Transform):
             sub_width += self.window_raise
             sub_height += self.window_raise
             shift_length += self.window_raise/10
-            
+
         return origin
-    
+
 def option_reader(transformType, option):
     kwargs = {}
 
@@ -458,7 +489,7 @@ def option_reader(transformType, option):
         kwargs["down_slope"] = 0.2 if option[-1] is "s" else 0.1
 
     elif transformType is "2A":
-        pass                
+        pass
 
     elif transformType is "2B":
         pos, strength = option.split("-")
@@ -503,15 +534,15 @@ def transformImage(image, coords, transformType, option, base="Arles-15t.jpg"):
         tran = Folded(width=width, height=height, spacing=40, **kwargs)
 
     elif transformType is "2A":
-        tran = Perspective(width=width, height=height, options=option)        
+        tran = Perspective(width=width, height=height, options=option)
 
     elif transformType is "2B":
         tran = Shadow(width=width, height=height, spacing=40, **kwargs)
 
     assert isinstance(tran, Transform)
     transImage = tran.transform_image(image, option, base=base)
-    transCoords = tran.transform_points(coords)
-    
+    transCoords = tran.transform_points(coords, option)
+
     return transImage, transCoords
 
 def test():
@@ -570,7 +601,7 @@ def test():
         trans_image, trans_coords = transformImage(origin, coords, "2A", option, base="Arles-15t.jpg")
         assert trans_coords.shape == (1, 4, 2)
         cv2.imwrite("test_api/2A_{}.png".format(option), trans_image)
-        
+
     # 2B
     print("START TRANSFORM 2B")
     options = ["l-s", "l-w", "lt-s", "lt-w", "t-s", "t-w", "rt-s", "rt-w",
