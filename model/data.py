@@ -138,7 +138,7 @@ class RealData(Dataset):
     CANVAS_SIZE = 1280
     MAG_RATIO = 0.5
 
-    def __init__(self, is_train=True, label=None):
+    def __init__(self, is_train=True, label=None, dataset="doc_0001"):
         self.width = 480
         self.height = 640
 
@@ -178,15 +178,15 @@ class RealData(Dataset):
                     bboxes[name] = bbox
                     labels[name] = label
 
-                #path = os.path.join(base_dir, folder, dpi, noise, "label")
-                #files = sorted(os.listdir(path), reverse=True)
-                #for file_name in files:
-                #    name = file_name.split(".")[0]
-                #    label = np.load(os.path.join(path, file_name))
-                #    print(label.shape)
-                #    label = np.expand_dims(label, axis=2)
-                #    label = cv2.resize(label, dsize=(self.height, self.width), interpolation=cv2.INTER_NEAREST)
-                #    labels[name] = label.astype(np.int64)
+                path = os.path.join(base_dir, folder, dpi, noise, "label")
+                files = sorted(os.listdir(path), reverse=True)
+                for file_name in files:
+                    name = file_name.split(".")[0]
+                    label = np.load(os.path.join(path, file_name))
+                    label = cv2.resize(label, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
+                    #print(label.shape)
+                    label = np.expand_dims(label, axis=2)
+                    labels[name] = label.astype(np.int64)
 
                 path = os.path.join(base_dir, folder, dpi, noise, "craft")
                 files = sorted(os.listdir(path), reverse=True)
@@ -197,7 +197,8 @@ class RealData(Dataset):
 
         self.data_len = len(images)
         print("load images: ", self.data_len)
-        self.mapper = {i: name for i, name in enumerate(images.keys())}
+        keys = sorted(list(images.keys()))
+        self.mapper = {i: name for i, name in enumerate(keys)}
         self.images = images
         self.labels = labels
         self.bboxes = bboxes
@@ -274,6 +275,155 @@ class RealData(Dataset):
     def __len__(self):
         return self.data_len
 
+class _RealData(Dataset):
+    CANVAS_SIZE = 1280
+    MAG_RATIO = 0.5
+
+    def __init__(self, is_train=True, label=None):
+        self.width = 480
+        self.height = 640
+
+        folder = "train" if is_train else "test"
+
+        self.boxing = self.get_boxing()
+        images, labels, bboxes, crafts, _sizes = dict(), dict(), dict(), dict(), dict()
+        base_dir = "../data/AugmentedImage"
+
+        with open(os.path.join(base_dir, "doc_0002_p01.json")) as fin:
+            self.label = json.load(fin)
+
+        base_dir = "../data/AugmentedImage/doc_0002"
+
+        for dpi in ["200", "300"]:
+            for noise in ["BW", "Color", "Gray"]:
+                path = os.path.join(base_dir, folder, dpi, noise, "input")
+                files = sorted(os.listdir(path), reverse=True)
+                for file_name in files:
+                    if "jpg" not in file_name:
+                        continue
+                    if "_ib" in file_name or "_t" in file_name:
+                        continue
+                    name = file_name.split(".")[0]
+                    img = cv2.imread(os.path.join(path, file_name))
+                    _sizes[name] = img.shape
+                    img = cv2.resize(img, dsize=(self.width, self.height), interpolation=cv2.INTER_LINEAR)
+                    img = img.reshape(1, *img.shape)
+                    img = normalizeMeanVariance(img)
+                    img = img.squeeze()
+                    images[name] = img
+
+                path = os.path.join(base_dir, folder, dpi, noise, "answer")
+                files = sorted(os.listdir(path), reverse=True)
+                for file_name in files:
+                    if "_ib" in file_name or "_t" in file_name:
+                        continue
+                    name = file_name.split(".")[0]
+                    label, bbox = self.boxing_info(os.path.join(path, file_name), _sizes[name])
+                    #labels[name] = label.astype(np.int64)
+                    bboxes[name] = bbox
+                    labels[name] = label
+
+                path = os.path.join(base_dir, folder, dpi, noise, "label")
+                files = sorted(os.listdir(path), reverse=True)
+                for file_name in files:
+                    if "_ib" in file_name or "_t" in file_name:
+                        continue
+                    name = file_name.split(".")[0]
+                    label = np.load(os.path.join(path, file_name))
+                    label = cv2.resize(label, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
+                    #print(label.shape)
+                    label = np.expand_dims(label, axis=2)
+                    labels[name] = label.astype(np.int64)
+
+                path = os.path.join(base_dir, folder, dpi, noise, "craft")
+                files = sorted(os.listdir(path), reverse=True)
+                for file_name in files:
+                    if "_ib" in file_name or "_t" in file_name:
+                        continue
+                    name = file_name.split(".")[0]
+                    craft = np.load(os.path.join(path, file_name))
+                    crafts[name] = craft.reshape(1, self.height, self.width)
+
+        self.data_len = len(images)
+        print("load images: ", self.data_len)
+        keys = sorted(list(images.keys()))
+        self.mapper = {i: name for i, name in enumerate(keys)}
+        self.images = images
+        self.labels = labels
+        self.bboxes = bboxes
+        self.crafts = crafts
+
+    def _parse_field(self, fieldID):
+        token = fieldID.split("+")
+        front = token[0].split("#")
+        front = front[0].split("_")
+        if front[-1].isdigit():
+            key = "_".join(front[:-1])
+        else:
+            key = "_".join(front)
+
+        if len(token) > 1:
+            key = "{}_{}".format(key, token[1])
+        return key
+
+    def get_boxing(self):
+        classes = [
+            # x1, x2, y1, y2
+            (70, 195, 45, 65),
+            (37, 110, 114, 124),
+            (270, 320, 110, 128),
+            (32, 60, 165, 174),
+            (32, 60, 215, 224),
+            (70, 90, 215, 224),
+            (105, 150, 215, 224),
+            (260, 370, 215, 224),
+            (380, 440, 215, 224),
+        ]
+        info = np.zeros((len(classes), self.height, self.width))
+        for i, (x1, x2, y1, y2) in enumerate(classes):
+            info[i, y1:y2, x1:x2] = 1
+        info = info.astype(np.float32)
+        return info
+
+    def boxing_info(self, file_name, shape):
+        label = np.zeros((self.height, self.width))
+        h, w, c = shape
+        h_ratio = h / self.height
+        w_ratio = w / self.width
+
+        input_file = csv.DictReader(open(file_name))
+        bbox = []
+        for row in input_file:
+            if row.get("FieldID", '1') is not '1':
+                boxing = row["Area"]
+                fieldID = row["FieldID"]
+                if not fieldID:
+                    continue
+                #if fieldID not in self.label:
+                #    self.label[fieldID] = self.label_num
+                #    self.label_num = self.label_num + 1
+
+                x1, y1, x2, y2 = boxing.split(";")
+                x1, x2 = int(int(x1) / w_ratio), int(int(x2) / w_ratio)
+                y1, y2 = int(int(y1) / h_ratio), int(int(y2) / h_ratio)
+                label[y1:y2, x1:x2] = self.label[self._parse_field(fieldID)]
+                bbox.append((self.label[self._parse_field(fieldID)], x1, y1, x1, y2, x2, y2, x2, y1))
+        label = np.expand_dims(label, axis=2)
+        label = label.astype(np.int64)
+        return label, bbox
+        #return bbox
+
+    def get_bbox(self, idx):
+        idx = int(idx)
+        name = self.mapper[idx]
+        return self.bboxes[name]
+
+    def __getitem__(self, idx):
+        name = self.mapper[idx]
+        return self.images[name], self.crafts[name], self.labels[name], self.boxing, idx
+
+    def __len__(self):
+        return self.data_len
 if __name__ == "__main__":
     real = RealData(is_train=False)
     loader = DataLoader(real, batch_size=2, shuffle=False, num_workers=4)

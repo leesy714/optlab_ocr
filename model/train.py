@@ -13,7 +13,7 @@ import logging
 
 from data import Data, LabelData, RealData
 from model import Model4 as Model
-from model import Model7, Model5, Model6
+from model import Model7, Model5, Model6, Model8
 from focal_loss import FocalLoss
 from optimizer import RAdam
 
@@ -47,9 +47,11 @@ def accuracy_bbox(y_true, y_pred, bboxes):
         _bbox = bboxes[b]
         for box in _bbox:
             label, x1, y1, x2, y2, x3, y3, x4, y4 = box
-            x_min, x_max = min(x1, x2, x3, x4)//2, max(x1, x2, x3, x4)//2
-            y_min, y_max = min(y1, y2, y3, y4)//2, max(y1, y2, y3, y4)//2
-            if x_min == x_max or y_min == y_max:
+            #x_min, x_max = min(x1, x2, x3, x4)//2, max(x1, x2, x3, x4)//2
+            #y_min, y_max = min(y1, y2, y3, y4)//2, max(y1, y2, y3, y4)//2
+            x_min, x_max = min(x1, x2, x3, x4), max(x1, x2, x3, x4)
+            y_min, y_max = min(y1, y2, y3, y4), max(y1, y2, y3, y4)
+            if x_min == x_max or y_min == y_max or y_min >= _y_pred.size(0) or x_min >= _y_pred.size(1):
                 continue
             y_pred_box = torch.flatten(_y_pred[y_min:y_max, x_min:x_max])
             uniq, counts = torch.unique(y_pred_box, return_counts=True)
@@ -348,13 +350,13 @@ class RealTrain(Train):
         self.loss_alpha = loss_alpha
 
         self.train_data = RealData(is_train=True)
-        self.vali_data = RealData(is_train=False)
+        self.vali_data = RealData(is_train=False, label=self.train_data.label)
         self.train_loader = DataLoader(self.train_data, batch_size=batch_size, shuffle=True, num_workers=4)
         self.vali_loader = DataLoader(self.vali_data, batch_size=batch_size, shuffle=False, num_workers=4)
 
         self.classes = len(self.train_data.label)
 
-        self.model = Model7(self.classes)
+        self.model = Model8(self.classes, 9)
         self.model_name = self.model.__class__.__name__
 
         if torch.cuda.device_count()>1:
@@ -379,12 +381,14 @@ class RealTrain(Train):
         pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
                     desc="({0:^3})".format(epoch))
 
-        for batch, (imgs, ys, _) in pbar:
+        for batch, (imgs, crafts, ys, boxing, _) in pbar:
             imgs = imgs.permute(0, 3, 1, 2)
             imgs = imgs.to(device)
+            crafts = crafts.to(device)
+            boxing = boxing.to(device)
             ys = ys.to(device)
             self.optimizer.zero_grad()
-            pred, _ = self.model(imgs)
+            pred, _ = self.model(imgs, crafts, boxing)
             loss = loss_func(pred, ys)
             loss.backward()
             self.optimizer.step()
@@ -399,11 +403,12 @@ class RealTrain(Train):
         total_loss = torch.Tensor([0])
 
         accs, recs, pres, acc_boxes = [] ,[], [], []
-        for batch, (imgs, ys, idx) in enumerate(iterator):
+        for batch, (imgs, crafts, ys, boxing, idx) in enumerate(iterator):
             imgs = imgs.permute(0, 3, 1, 2)
             imgs = imgs.to(device)
+            crafts = crafts.to(device)
             ys = ys.to(device)
-            pred, _ = self.model(imgs)
+            pred, _ = self.model(imgs, crafts, boxing)
             loss = loss_func(pred, ys)
             total_loss += loss.item()
             pred = pred.permute(0, 2, 3, 1)
@@ -425,6 +430,40 @@ class RealTrain(Train):
         total_loss /= len(iterator)
         return total_loss[0], acc, rec, pre, acc_box
     
+    def test(self):
+        self.model.eval()
+
+        count = 0
+        for batch, (imgs, crafts, ys, boxing, idx) in enumerate(self.vali_loader):
+            imgs = imgs.permute(0, 3, 1, 2)
+            imgs = imgs.to(device)
+            crafts = crafts.to(device)
+            ys = ys.to(device)
+            preds, _ = self.model(imgs, crafts, boxing)
+            preds = preds.permute(0, 2, 3, 1)
+            _, argmaxs = preds.max(dim=3)
+            imgs = imgs.permute(0, 2, 3, 1)
+            crafts = crafts.squeeze()
+            for img, craft, y, argmax in zip(imgs, crafts, ys, argmaxs):
+                
+                img = img.cpu().data.numpy()
+                img *= np.array([0.229 * 255.0, 0.224*255.0, 0.225*255.0], dtype=np.float32)
+                img += np.array([0.485 * 255.0, 0.456*255.0, 0.406*255.0], dtype=np.float32)
+                img = np.clip(img, 0, 255).astype(np.uint8)
+                craft = craft.cpu().data.numpy()
+                argmax = argmax.cpu().data.numpy()
+                
+                craft = np.clip(craft * 255, 0, 255).astype(np.uint8)
+                craft = cv2.applyColorMap(craft, cv2.COLORMAP_JET)
+                argmax = np.clip(argmax*(255 / len(self.train_data.label)), 0, 255).astype(np.uint8)
+                argmax = cv2.applyColorMap(argmax, cv2.COLORMAP_JET)
+                cv2.imwrite("./res_temp/{:04d}_base.png".format(count), img)
+                cv2.imwrite("./res_temp/{:04d}_pred.png".format(count), argmax)
+                cv2.imwrite("./res_temp/{:04d}_craft.png".format(count), craft)
+                count = count + 1
+            if count >= 100:
+                break
+
     def run(self):
         alpha = [1-self.loss_alpha for _ in range(self.classes + 1)]
         alpha[0] = self.loss_alpha
@@ -448,7 +487,7 @@ class RealTrain(Train):
             )
             torch.save(save_dict, self.save_path)
             self.save(res)
-
+        self.test()
 
 if __name__ == "__main__":
     fire.Fire({
