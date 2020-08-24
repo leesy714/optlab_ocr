@@ -45,164 +45,64 @@ def resize_aspect_ratio_batch(imgs, square_size, interpolation, mag_ratio=1):
 
     return resized, ratio, size_heatmap
 
-class Data(Dataset):
-    CANVAS_SIZE = 1280
-    MAG_RATIO = 0.5
 
-    def __init__(self):
-        self.base_dir = "../data/imgs/origin_noise/"
-        self.ipt_dir = "../data/imgs/origin_craft/"
-        self.opt_dir = "../data/imgs/origin_noise_label"
-        assert len(os.listdir(self.ipt_dir)) == len(os.listdir(self.opt_dir)) == len(os.listdir(self.base_dir)),\
-            "{}, {}, {}".format(len(os.listdir(self.ipt_dir)), len(os.listdir(self.opt_dir)), len(os.listdir(self.base_dir)))
+class Document:
 
-        self.data_len = len(os.listdir(self.ipt_dir))
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.label = None
 
-    def noise(self, img):
-        img = img.astype(np.float32)
-        img += np.random.randn(*img.shape) * 60
-        img = np.clip(img, 0, 255).astype(np.uint8)
-        return img
+    def get_label_info(self, path):
+        pass
 
-    def __getitem__(self, idx):
-        base = cv2.imread(os.path.join(self.base_dir, "{:06d}".format(idx)+".jpg"))
-        base = self.noise(base)
-        x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
-        y = np.load(os.path.join(self.opt_dir, "{:06d}".format(idx)+".npy"))
+    def get_image(self, path):
+        img = cv2.imread(path)
+        origin_shape = img.shape
+        img = cv2.resize(img, dsize=(self.width, self.height), interpolation=cv2.INTER_LINEAR)
+        img = img.reshape(1, *img.shape)
+        img = normalizeMeanVariance(img)
+        img = img.squeeze()
+        return img, origin_shape
 
-        # noise image, (1280, 960, 3) -> (640, 480, 3) normalized
-        base = base.reshape(1, *base.shape)
-        img_resized, target_ratio, size_heatmap = resize_aspect_ratio_batch(
-            base, self.CANVAS_SIZE, interpolation=cv2.INTER_LINEAR, mag_ratio=self.MAG_RATIO)
-        base = normalizeMeanVariance(img_resized)
-        base = base.squeeze()
+    def get_box(self, path, shape):
+        label = np.zeros((self.height, self.width))
+        h, w, c = shape
+        h_ratio = h / self.height
+        w_ratio = w / self.width
 
-        # CRAFR model
-        x = x.reshape(1, x.shape[0], x.shape[1])
-        y = y.transpose(1, 0)
-        return x, y.astype(np.int64), base, idx
+        input_file = csv.DictReader(open(path))
+        bbox = []
+        for row in input_file:
+            #if row.get("FieldID", '1') is not '1':
+            if row.get("Field Name", '') is not '':
+                boxing = row["Area"]
+                fieldID = row["Field Name"]
+                if not fieldID:
+                    continue
 
-    def __len__(self):
-        return self.data_len
+                x1, y1, x2, y2 = boxing.split(";")
+                x1, x2 = int(int(x1) / w_ratio), int(int(x2) / w_ratio)
+                y1, y2 = int(int(y1) / h_ratio), int(int(y2) / h_ratio)
+                bbox.append((self.label[fieldID], x1, y1, x1, y2, x2, y2, x2, y1))
+        return bbox
 
-class LabelData(Dataset):
-    CANVAS_SIZE = 1280
-    MAG_RATIO = 0.5
+    def get_label(self, path):
+        label = np.load(path)
+        label = cv2.resize(label, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        label = np.expand_dims(label, axis=2)
+        return label.astype(np.int64)
 
-    def __init__(self, classes):
-        self.base_dir = "../data/imgs/origin_noise/"
-        self.ipt_dir = "../data/imgs/origin_craft/"
-        self.opt_dir = "../data/imgs/origin_noise_label"
-        self.label_dir = "../data/imgs/origin_label"
+    def get_group(self, path):
+        group = np.load(path)
+        group = cv2.resize(group, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        group = np.expand_dims(group, axis=2)
+        return group.astype(np.int64)
 
-        assert len(os.listdir(self.ipt_dir)) == len(os.listdir(self.opt_dir)) == len(os.listdir(self.base_dir)),\
-            "{}, {}, {}".format(len(os.listdir(self.ipt_dir)), len(os.listdir(self.opt_dir)), len(os.listdir(self.base_dir)))
-
-        self.data_len = len(os.listdir(self.ipt_dir))
-        self.classes = classes
-        self.mapper = np.eye(classes + 1)
-
-    def split_label(self, label):
-        label = label.reshape(-1)
-        one_hot_label = self.mapper[label]
-        one_hot_label = one_hot_label[:, 1:]
-        one_hot_label = one_hot_label.reshape(640, 480, self.classes)
-        return one_hot_label
-
-    def __getitem__(self, idx):
-        base = cv2.imread(os.path.join(self.base_dir, "{:06d}".format(idx)+".jpg"))
-        x = np.load(os.path.join(self.ipt_dir, "{:06d}".format(idx)+".npy"))
-        y = np.load(os.path.join(self.opt_dir, "{:06d}".format(idx)+".npy"))
-        label = np.load(os.path.join(self.label_dir, "{:06d}".format(idx)+".npy"))
-
-        # noise image, (1280, 960, 3) -> (640, 480, 3) normalized
-        base = base.reshape(1, *base.shape)
-        img_resized, target_ratio, size_heatmap = resize_aspect_ratio_batch(
-            base, self.CANVAS_SIZE, interpolation=cv2.INTER_LINEAR, mag_ratio=self.MAG_RATIO)
-        base = normalizeMeanVariance(img_resized)
-        base = base.squeeze()
-
-        # CRAFR model
-        x = x.reshape(1, x.shape[0], x.shape[1])
-        y = y.transpose(1, 0)
-        label = label.transpose(1, 0)
-        label = self.split_label(label)
-        label = label.reshape(self.classes, 640, 480)
-
-        return x, y.astype(np.int64), label.astype(np.float32), base, idx
-
-    def __len__(self):
-        return self.data_len
-
-class RealData(Dataset):
-    CANVAS_SIZE = 1280
-    MAG_RATIO = 0.5
-
-    def __init__(self, is_train=True, label=None, dataset="doc_0001"):
-        self.width = 480
-        self.height = 640
-
-        folder = "train" if is_train else "test"
-
-        self.boxing = self.get_boxing()
-        images, labels, bboxes, crafts, _sizes = dict(), dict(), dict(), dict(), dict()
-        base_dir = "../data/AugmentedImage"
-
-        with open(os.path.join(base_dir, "doc_0001_p01.json")) as fin:
-            self.label = json.load(fin)
-
-        base_dir = "../data/AugmentedImage/doc_0001"
-
-        for dpi in ["200", "300"]:
-            for noise in ["BW", "Color", "Gray"]:
-                path = os.path.join(base_dir, folder, dpi, noise, "input")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    if "jpg" not in file_name:
-                        continue
-                    name = file_name.split(".")[0]
-                    img = cv2.imread(os.path.join(path, file_name))
-                    _sizes[name] = img.shape
-                    img = cv2.resize(img, dsize=(self.width, self.height), interpolation=cv2.INTER_LINEAR)
-                    img = img.reshape(1, *img.shape)
-                    img = normalizeMeanVariance(img)
-                    img = img.squeeze()
-                    images[name] = img
-
-                path = os.path.join(base_dir, folder, dpi, noise, "answer")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    name = file_name.split(".")[0]
-                    label, bbox = self.boxing_info(os.path.join(path, file_name), _sizes[name])
-                    #labels[name] = label.astype(np.int64)
-                    bboxes[name] = bbox
-                    labels[name] = label
-
-                path = os.path.join(base_dir, folder, dpi, noise, "label")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    name = file_name.split(".")[0]
-                    label = np.load(os.path.join(path, file_name))
-                    label = cv2.resize(label, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
-                    #print(label.shape)
-                    label = np.expand_dims(label, axis=2)
-                    labels[name] = label.astype(np.int64)
-
-                path = os.path.join(base_dir, folder, dpi, noise, "craft")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    name = file_name.split(".")[0]
-                    craft = np.load(os.path.join(path, file_name))
-                    crafts[name] = craft.reshape(1, self.height, self.width)
-
-        self.data_len = len(images)
-        print("load images: ", self.data_len)
-        keys = sorted(list(images.keys()))
-        self.mapper = {i: name for i, name in enumerate(keys)}
-        self.images = images
-        self.labels = labels
-        self.bboxes = bboxes
-        self.crafts = crafts
+    def get_craft(self, path):
+        craft = np.load(path)
+        craft = craft.reshape(1, self.height, self.width)
+        return craft
 
     def _parse_field(self, fieldID):
         token = fieldID.split("+")
@@ -216,6 +116,82 @@ class RealData(Dataset):
         if len(token) > 1:
             key = "{}_{}".format(key, token[1])
         return key
+
+    def load(self, base_dir, is_train):
+        folder = "train" if is_train else "test"
+        images, labels, bboxes, crafts, groups, _sizes = dict(), dict(), dict(), dict(), dict(), dict()
+        for dpi in ["200", "300"]:
+            for noise in ["BW", "Color", "Gray"]:
+                path = os.path.join(base_dir, folder, dpi, noise, "input")
+                for file_name in os.listdir(path):
+                    if "jpg" not in file_name:
+                        continue
+                    name = file_name.split(".")[0]
+                    images[name], _sizes[name] = self.get_image(os.path.join(path, file_name))
+
+                path = os.path.join(base_dir, folder, dpi, noise, "answer")
+                for file_name in os.listdir(path):
+                    name = file_name.split(".")[0]
+                    #bboxes[name] = self.get_box(os.path.join(path, file_name), _sizes[name])
+                    bboxes[name] = []
+
+                path = os.path.join(base_dir, folder, dpi, noise, "label")
+                for file_name in os.listdir(path):
+                    name = file_name.split(".")[0]
+                    print(name)
+                    labels[name] = self.get_label(os.path.join(path, file_name))
+
+                path = os.path.join(base_dir, folder, dpi, noise, "group")
+                for file_name in os.listdir(path):
+                    name = file_name.split(".")[0]
+                    groups[name] = self.get_group(os.path.join(path, file_name))
+
+                path = os.path.join(base_dir, folder, dpi, noise, "craft")
+                for file_name in os.listdir(path):
+                    name = file_name.split(".")[0]
+                    crafts[name] = self.get_craft(os.path.join(path, file_name))
+        return images, labels, bboxes, crafts, groups
+
+class Data0001(Dataset, Document):
+
+    def __init__(self, is_train=True, label=None, dataset="doc_0001"):
+        self.width = 480
+        self.height = 640
+        self.label = self.get_label_info()
+
+        self.boxing = self.get_boxing()
+        base_dir = "../data/AugmentedImage/doc_0001"
+        self.images, self.labels, self.bboxes, self.crafts, self.groups = self.load(base_dir, is_train)
+
+        self.data_len = len(self.images)
+        print("load images: ", self.data_len)
+        keys = sorted(list(self.images.keys()))
+        self.mapper = {i: name for i, name in enumerate(keys)}
+
+    def get_label_info(self):
+        with open(os.path.join("../data/AugmentedImage", "doc_0001_p01.json"), encoding="utf-8") as fin:
+            label = json.load(fin)
+        final_label = {}
+        label_mapper = {}
+        max_id = max([v for v in label.values() if v < 100])
+        for key, value in label.items():
+            if value >= 100:
+                max_id += 1
+                final_label[key] = max_id
+                label_mapper[value] = max_id
+                max_id += 1
+            else:
+                final_label[key] = value
+        self.label_mapper = label_mapper
+        return final_label
+
+    def get_label(self, path):
+        label = np.load(path)
+        label = cv2.resize(label, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        for key, value in self.label_mapper.items():
+            label[label==key] = value
+        label = np.expand_dims(label, axis=2)
+        return label.astype(np.int64)
 
     def get_boxing(self):
         classes = [
@@ -235,34 +211,6 @@ class RealData(Dataset):
         info = info.astype(np.float32)
         return info
 
-    def boxing_info(self, file_name, shape):
-        label = np.zeros((self.height, self.width))
-        h, w, c = shape
-        h_ratio = h / self.height
-        w_ratio = w / self.width
-
-        input_file = csv.DictReader(open(file_name))
-        bbox = []
-        for row in input_file:
-            if row.get("FieldID", '1') is not '1':
-                boxing = row["Area"]
-                fieldID = row["FieldID"]
-                if not fieldID:
-                    continue
-                #if fieldID not in self.label:
-                #    self.label[fieldID] = self.label_num
-                #    self.label_num = self.label_num + 1
-
-                x1, y1, x2, y2 = boxing.split(";")
-                x1, x2 = int(int(x1) / w_ratio), int(int(x2) / w_ratio)
-                y1, y2 = int(int(y1) / h_ratio), int(int(y2) / h_ratio)
-                label[y1:y2, x1:x2] = self.label[self._parse_field(fieldID)]
-                bbox.append((self.label[self._parse_field(fieldID)], x1, y1, x1, y2, x2, y2, x2, y1))
-        label = np.expand_dims(label, axis=2)
-        label = label.astype(np.int64)
-        return label, bbox
-        #return bbox
-
     def get_bbox(self, idx):
         idx = int(idx)
         name = self.mapper[idx]
@@ -270,101 +218,32 @@ class RealData(Dataset):
 
     def __getitem__(self, idx):
         name = self.mapper[idx]
-        return self.images[name], self.crafts[name], self.labels[name], self.boxing, idx
+        return self.images[name], self.crafts[name], self.labels[name], self.groups[name], self.boxing, idx
 
     def __len__(self):
         return self.data_len
 
-class _RealData(Dataset):
-    CANVAS_SIZE = 1280
-    MAG_RATIO = 0.5
+
+class Data0002(Dataset, Document):
 
     def __init__(self, is_train=True, label=None):
         self.width = 480
         self.height = 640
-
-        folder = "train" if is_train else "test"
+        self.label = self.get_label_info()
 
         self.boxing = self.get_boxing()
-        images, labels, bboxes, crafts, _sizes = dict(), dict(), dict(), dict(), dict()
-        base_dir = "../data/AugmentedImage"
-
-        with open(os.path.join(base_dir, "doc_0002_p01.json")) as fin:
-            self.label = json.load(fin)
-
         base_dir = "../data/AugmentedImage/doc_0002"
+        self.images, self.labels, self.bboxes, self.crafts, self.groups = self.load(base_dir, is_train)
 
-        for dpi in ["200", "300"]:
-            for noise in ["BW", "Color", "Gray"]:
-                path = os.path.join(base_dir, folder, dpi, noise, "input")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    if "jpg" not in file_name:
-                        continue
-                    if "_ib" in file_name or "_t" in file_name:
-                        continue
-                    name = file_name.split(".")[0]
-                    img = cv2.imread(os.path.join(path, file_name))
-                    _sizes[name] = img.shape
-                    img = cv2.resize(img, dsize=(self.width, self.height), interpolation=cv2.INTER_LINEAR)
-                    img = img.reshape(1, *img.shape)
-                    img = normalizeMeanVariance(img)
-                    img = img.squeeze()
-                    images[name] = img
-
-                path = os.path.join(base_dir, folder, dpi, noise, "answer")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    if "_ib" in file_name or "_t" in file_name:
-                        continue
-                    name = file_name.split(".")[0]
-                    label, bbox = self.boxing_info(os.path.join(path, file_name), _sizes[name])
-                    #labels[name] = label.astype(np.int64)
-                    bboxes[name] = bbox
-                    labels[name] = label
-
-                path = os.path.join(base_dir, folder, dpi, noise, "label")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    if "_ib" in file_name or "_t" in file_name:
-                        continue
-                    name = file_name.split(".")[0]
-                    label = np.load(os.path.join(path, file_name))
-                    label = cv2.resize(label, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
-                    #print(label.shape)
-                    label = np.expand_dims(label, axis=2)
-                    labels[name] = label.astype(np.int64)
-
-                path = os.path.join(base_dir, folder, dpi, noise, "craft")
-                files = sorted(os.listdir(path), reverse=True)
-                for file_name in files:
-                    if "_ib" in file_name or "_t" in file_name:
-                        continue
-                    name = file_name.split(".")[0]
-                    craft = np.load(os.path.join(path, file_name))
-                    crafts[name] = craft.reshape(1, self.height, self.width)
-
-        self.data_len = len(images)
+        self.data_len = len(self.images)
         print("load images: ", self.data_len)
-        keys = sorted(list(images.keys()))
+        keys = sorted(list(self.images.keys()))
         self.mapper = {i: name for i, name in enumerate(keys)}
-        self.images = images
-        self.labels = labels
-        self.bboxes = bboxes
-        self.crafts = crafts
 
-    def _parse_field(self, fieldID):
-        token = fieldID.split("+")
-        front = token[0].split("#")
-        front = front[0].split("_")
-        if front[-1].isdigit():
-            key = "_".join(front[:-1])
-        else:
-            key = "_".join(front)
-
-        if len(token) > 1:
-            key = "{}_{}".format(key, token[1])
-        return key
+    def get_label_info(self, path):
+        with open(os.path.join("../data/AugmentedImage", "doc_0002_p01.json")) as fin:
+            label = json.load(fin)
+        return label
 
     def get_boxing(self):
         classes = [
@@ -385,34 +264,6 @@ class _RealData(Dataset):
         info = info.astype(np.float32)
         return info
 
-    def boxing_info(self, file_name, shape):
-        label = np.zeros((self.height, self.width))
-        h, w, c = shape
-        h_ratio = h / self.height
-        w_ratio = w / self.width
-
-        input_file = csv.DictReader(open(file_name))
-        bbox = []
-        for row in input_file:
-            if row.get("FieldID", '1') is not '1':
-                boxing = row["Area"]
-                fieldID = row["FieldID"]
-                if not fieldID:
-                    continue
-                #if fieldID not in self.label:
-                #    self.label[fieldID] = self.label_num
-                #    self.label_num = self.label_num + 1
-
-                x1, y1, x2, y2 = boxing.split(";")
-                x1, x2 = int(int(x1) / w_ratio), int(int(x2) / w_ratio)
-                y1, y2 = int(int(y1) / h_ratio), int(int(y2) / h_ratio)
-                label[y1:y2, x1:x2] = self.label[self._parse_field(fieldID)]
-                bbox.append((self.label[self._parse_field(fieldID)], x1, y1, x1, y2, x2, y2, x2, y1))
-        label = np.expand_dims(label, axis=2)
-        label = label.astype(np.int64)
-        return label, bbox
-        #return bbox
-
     def get_bbox(self, idx):
         idx = int(idx)
         name = self.mapper[idx]
@@ -420,22 +271,23 @@ class _RealData(Dataset):
 
     def __getitem__(self, idx):
         name = self.mapper[idx]
-        return self.images[name], self.crafts[name], self.labels[name], self.boxing, idx
+        return self.images[name], self.crafts[name], self.labels[name], self.groups[name], self.boxing, idx
 
     def __len__(self):
         return self.data_len
+
 if __name__ == "__main__":
-    real = RealData(is_train=False)
+    real = Data0001(is_train=False)
     loader = DataLoader(real, batch_size=2, shuffle=False, num_workers=4)
     for images, crafts, labels, boxing, bboxes in loader:
         print(images.size())
         print(labels.size())
         print(boxing.size())
-        label = labels[0].numpy()
-        label = np.clip(label * (255 /15), 0 ,255)
-        heatmap_img = cv2.applyColorMap(label.astype(np.uint8), cv2.COLORMAP_JET)
-        cv2.imwrite("origin_label.png", heatmap_img)
-        cv2.imwrite("origin.png", images[0].numpy())
+        #label = labels[0].numpy()
+        #label = np.clip(label * (255 /15), 0 ,255)
+        #heatmap_img = cv2.applyColorMap(label.astype(np.uint8), cv2.COLORMAP_JET)
+        #cv2.imwrite("origin_label.png", heatmap_img)
+        #cv2.imwrite("origin.png", images[0].numpy())
         print(bboxes)
         break
 
