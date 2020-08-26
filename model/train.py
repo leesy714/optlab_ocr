@@ -11,15 +11,14 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 import logging
 
-from data import Data, LabelData, RealData
-from model import Model4 as Model
-from model import Model7, Model5, Model6, Model8
+from data import Data0001
+from model import Model0001
 from focal_loss import FocalLoss
 from optimizer import RAdam
 
 #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device = 'cuda:0'
-
+device = 'cuda'
+#device = 'cpu'
 
 def accuracy(y_true, y_pred):
     total = y_true.size(0)
@@ -66,7 +65,7 @@ def accuracy_bbox(y_true, y_pred, bboxes):
 
 class Train:
 
-    def __init__(self, classes=9, batch_size=8, loss_gamma=0.1, loss_alpha=0.4,
+    def __init__(self, batch_size=1, loss_gamma=0.1, loss_alpha=0.4,
                  learning_rate=1e-4, epochs=10, load_model=False):
         """
         :param classes: number of classes except background
@@ -78,270 +77,8 @@ class Train:
         :param load_model: model pretrain model to restart model training
         """
 
-        self.classes = classes
-        self.epochs =  epochs
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.loss_gamma = loss_gamma
-        self.loss_alpha = loss_alpha
-
-        self.data = Data()
-        data_len = len(self.data)
-        self.train_num = int(data_len * 0.8)
-        self.vali_num = int(data_len * 0.1)
-        self.test_num = data_len - self.train_num - self.vali_num
-        train = Subset(self.data, list(range(self.train_num)))
-        vali = Subset(self.data, list(range(self.train_num, self.train_num + self.vali_num)))
-        test = Subset(self.data, list(range(self.train_num + self.vali_num, data_len)))
-        self.train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=4)
-        self.vali_loader = DataLoader(vali, batch_size=batch_size, shuffle=False, num_workers=4)
-        self.test_loader = DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=4)
-
-        self.model = Model(self.classes)
-        self.model_name = self.model.__class__.__name__
-
-        if torch.cuda.device_count()>1:
-            print("Use ", torch.cuda.device_count(), 'GPUs')
-            self.model = nn.DataParallel(self.model)
-        self.model = self.model.to(device)
-
-        self.optimizer = RAdam(self.model.parameters(), lr=self.learning_rate)
-        self.save_path = os.path.join('weight', self.model_name+".pth")
-        self.start_epoch = 0
-
-        if load_model:
-            checkpoint = torch.load(self.save_path)
-            self.start_epoch = checkpoint["epoch"]
-            self.model.module.load_state_dict(checkpoint["model_state_dict"])
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
-    def train(self, epoch, loss_func):
-        self.model.train()
-
-        total_loss = torch.Tensor([0])
-        pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
-                    desc="({0:^3})".format(epoch))
-
-        for batch, (crafts, ys, imgs, idx) in pbar:
-            imgs = imgs.permute(0, 3, 1, 2)
-            imgs = imgs.to(device)
-            ys = ys.to(device)
-            crafts = crafts.to(device)
-            #x = torch.cat((imgs, crafts), dim=1)
-            self.optimizer.zero_grad()
-            pred, _ = self.model(imgs, crafts)
-            #pred, _ = self.model(x)
-            loss = loss_func(pred, ys)
-            loss.backward()
-            self.optimizer.step()
-            batch_loss = loss.item()
-            total_loss += batch_loss
-            pbar.set_postfix(train_loss=batch_loss)
-        total_loss /= len(self.train_loader)
-        return total_loss[0]
-
-    def validate(self, epoch, iterator, loss_func):
-        self.model.eval()
-        total_loss = torch.Tensor([0])
-
-        accs, recs, pres, acc_boxes = [] ,[], [], []
-        for batch, (crafts, ys, imgs, file_num) in enumerate(iterator):
-            imgs = imgs.permute(0, 3, 1, 2)
-            imgs = imgs.to(device)
-            ys = ys.to(device)
-            crafts = crafts.to(device)
-            #x = torch.cat((imgs, crafts), dim=1)
-            #pred, _ = self.model(x)
-            pred, _ = self.model(imgs, crafts)
-            loss = loss_func(pred, ys)
-            total_loss += loss.item()
-            pred = pred.permute(0, 2, 3, 1)
-            _, argmax = pred.max(dim=3)
-            bbox = [self.load_bbox(b) for b in file_num]
-            acc_box = accuracy_bbox(ys, argmax, bbox)
-            acc = accuracy(ys.view(-1, 1), argmax.view(-1, 1))
-            rec = recall(ys.view(-1, 1), argmax.view(-1, 1))
-            pre = precision(ys.view(-1, 1), argmax.view(-1, 1))
-            accs.append(acc)
-            acc_boxes.append(acc_box)
-            recs.append(rec)
-            pres.append(pre)
-        acc = sum(accs) / len(accs)
-        acc_box = sum(acc_boxes) / len(acc_boxes)
-        rec = sum(recs) / len(recs)
-        pre = sum(pres) / len(pres)
-
-        total_loss /= len(iterator)
-        return total_loss[0], acc, rec, pre, acc_box
-
-    def load_bbox(self, file_num):
-        with open("../data/imgs/origin_noise_bbox/{:06d}.pickle".format(int(file_num)), "rb") as fin:
-            bbox = pickle.load(fin)
-        return bbox
-
-
-    def count_parameters(self):
-        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-
-    def save(self, res):
-        with open("res/{}.json".format(self.model_name), "w") as fout:
-            json.dump(res, fout)
-
-    def run(self):
-        alpha = [1-self.loss_alpha for _ in range(self.classes + 1)]
-        alpha[0] = self.loss_alpha
-        loss_func = FocalLoss(gamma=self.loss_gamma, alpha=alpha)
-        print(self.model)
-        print("parameters: ",self.count_parameters())
-        res = {}
-        tot_vali_loss = np.inf
-        for epoch in range(self.start_epoch, self.epochs):
-            train_loss = self.train(epoch, loss_func)
-            vali_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
-            res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
-                              accuracy=float(acc), recall=float(rec), precision=float(pre),
-                              accuracy_bbox=float(acc_box))
-            print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}, box_acc: {:.4}".format(train_loss, vali_loss, rec, acc_box))
-            if vali_loss < tot_vali_loss:
-                tot_vali_loss = vali_loss
-                test_loss, acc, rec, pre, acc_box = self.validate(epoch, self.test_loader, loss_func)
-
-                res["best"] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
-                                test_loss=float(test_loss),
-                              accuracy=float(acc), recall=float(rec), precision=float(pre),
-                              accuracy_bbox=float(acc_box))
-                save_dict = dict(
-                    model_state_dict = self.model.module.state_dict(),
-                    optimizer_state_dict = self.optimizer.state_dict(),
-                    epoch=epoch,
-                    train_loss=train_loss,
-                    vali_loss=vali_loss,
-                )
-                torch.save(save_dict, self.save_path)
-
-            self.save(res)
-
-
-class LabelTrain(Train):
-
-    def __init__(self, classes=9, batch_size=8, loss_gamma=0.1, loss_alpha=0.4,
-                 learning_rate=1e-4, epochs=10, load_model=False):
-        """
-        :param classes: number of classes except background
-        :param batch_size: training dataset batch size
-        :param loss_gamma: gamma value in focal loss
-        :param loss_alpha: alpha value in focal loss
-        :param learning_rate: Optimizer learning_rate
-        :param epochs: training_epochs
-        :param load_model: model pretrain model to restart model training
-        """
-
-        self.classes = classes
-        self.epochs =  epochs
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.loss_gamma = loss_gamma
-        self.loss_alpha = loss_alpha
-
-        self.data = LabelData(self.classes)
-        data_len = len(self.data)
-        self.train_num = int(data_len * 0.8)
-        self.vali_num = int(data_len * 0.1)
-        self.test_num = data_len - self.train_num - self.vali_num
-        train = Subset(self.data, list(range(self.train_num)))
-        vali = Subset(self.data, list(range(self.train_num, self.train_num + self.vali_num)))
-        test = Subset(self.data, list(range(self.train_num + self.vali_num, data_len)))
-        self.train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=4)
-        self.vali_loader = DataLoader(vali, batch_size=batch_size, shuffle=False, num_workers=4)
-        self.test_loader = DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=4)
-
-        self.model = Model6(self.classes)
-        self.model_name = self.model.__class__.__name__
-
-        if torch.cuda.device_count()>1:
-            print("Use ", torch.cuda.device_count(), 'GPUs')
-            self.model = nn.DataParallel(self.model)
-        self.model = self.model.to(device)
-
-        self.optimizer = RAdam(self.model.parameters(), lr=self.learning_rate)
-        self.save_path = os.path.join('weight', self.model_name+".pth")
-        self.start_epoch = 0
-
-        if load_model:
-            checkpoint = torch.load(self.save_path)
-            self.start_epoch = checkpoint["epoch"]
-            self.model.module.load_state_dict(checkpoint["model_state_dict"])
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
-    def train(self, epoch, loss_func):
-        self.model.train()
-
-        total_loss = torch.Tensor([0])
-        pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
-                    desc="({0:^3})".format(epoch))
-
-        for batch, (crafts, ys, labels, imgs, idx) in pbar:
-            imgs = imgs.permute(0, 3, 1, 2)
-            imgs = imgs.to(device)
-            ys = ys.to(device)
-            labels = labels.to(device)
-            crafts = crafts.to(device)
-            self.optimizer.zero_grad()
-            pred, _ = self.model(imgs, crafts, labels)
-            loss = loss_func(pred, ys)
-            loss.backward()
-            self.optimizer.step()
-            batch_loss = loss.item()
-            total_loss += batch_loss
-            pbar.set_postfix(train_loss=batch_loss)
-        total_loss /= len(self.train_loader)
-        return total_loss[0]
-
-    def validate(self, epoch, iterator, loss_func):
-        self.model.eval()
-        total_loss = torch.Tensor([0])
-
-        accs, recs, pres, acc_boxes = [] ,[], [], []
-        for batch, (crafts, ys, labels, imgs, file_num) in enumerate(iterator):
-            imgs = imgs.permute(0, 3, 1, 2)
-            imgs = imgs.to(device)
-            ys = ys.to(device)
-            crafts = crafts.to(device)
-            pred, _ = self.model(imgs, crafts, labels)
-            loss = loss_func(pred, ys)
-            total_loss += loss.item()
-            pred = pred.permute(0, 2, 3, 1)
-            _, argmax = pred.max(dim=3)
-            bbox = [self.load_bbox(b) for b in file_num]
-            acc_box = accuracy_bbox(ys, argmax, bbox)
-            acc = accuracy(ys.view(-1, 1), argmax.view(-1, 1))
-            rec = recall(ys.view(-1, 1), argmax.view(-1, 1))
-            pre = precision(ys.view(-1, 1), argmax.view(-1, 1))
-            accs.append(acc)
-            acc_boxes.append(acc_box)
-            recs.append(rec)
-            pres.append(pre)
-        acc = sum(accs) / len(accs)
-        acc_box = sum(acc_boxes) / len(acc_boxes)
-        rec = sum(recs) / len(recs)
-        pre = sum(pres) / len(pres)
-
-        total_loss /= len(iterator)
-        return total_loss[0], acc, rec, pre, acc_box
-
-class RealTrain(Train):
-
-    def __init__(self, batch_size=8, loss_gamma=0.1, loss_alpha=0.4,
-                 learning_rate=1e-4, epochs=10, load_model=False):
-        """
-        :param classes: number of classes except background
-        :param batch_size: training dataset batch size
-        :param loss_gamma: gamma value in focal loss
-        :param loss_alpha: alpha value in focal loss
-        :param learning_rate: Optimizer learning_rate
-        :param epochs: training_epochs
-        :param load_model: model pretrain model to restart model training
-        """
+        self.classes_pred = 24
+        self.classes_group = 15
 
         self.epochs =  epochs
         self.learning_rate = learning_rate
@@ -349,14 +86,15 @@ class RealTrain(Train):
         self.loss_gamma = loss_gamma
         self.loss_alpha = loss_alpha
 
-        self.train_data = RealData(is_train=True)
-        self.vali_data = RealData(is_train=False, label=self.train_data.label)
+        self.train_data = Data0001(is_train=True)
+        self.vali_data = Data0001(is_train=False)
         self.train_loader = DataLoader(self.train_data, batch_size=batch_size, shuffle=True, num_workers=4)
         self.vali_loader = DataLoader(self.vali_data, batch_size=batch_size, shuffle=False, num_workers=4)
 
-        self.classes = len(self.train_data.label)
+        #self.classes = len(self.train_data.label)
 
-        self.model = Model8(self.classes, 9)
+        self.model = Model0001(anchor=8, pred_classes=self.classes_pred,
+                               group_classes=self.classes_group)
         self.model_name = self.model.__class__.__name__
 
         if torch.cuda.device_count()>1:
@@ -374,61 +112,80 @@ class RealTrain(Train):
             self.model.module.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-    def train(self, epoch, loss_func):
+        alpha = [1-self.loss_alpha for _ in range(self.classes_pred + 1)]
+        alpha[0] = self.loss_alpha
+        self.loss_pred = FocalLoss(gamma=self.loss_gamma, alpha=alpha)
+
+        alpha = [1-self.loss_alpha for _ in range(self.classes_group + 1)]
+        alpha[0] = self.loss_alpha
+        self.loss_group = FocalLoss(gamma=self.loss_gamma, alpha=alpha)
+
+    def train(self, epoch):
         self.model.train()
 
-        total_loss = torch.Tensor([0])
+        total_loss = 0.0
         pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader),
                     desc="({0:^3})".format(epoch))
 
-        for batch, (imgs, crafts, ys, boxing, _) in pbar:
+        for batch, (imgs, crafts, ys, groups, boxing, _) in pbar:
             imgs = imgs.permute(0, 3, 1, 2)
             imgs = imgs.to(device)
             crafts = crafts.to(device)
             boxing = boxing.to(device)
+            groups = groups.to(device)
             ys = ys.to(device)
+            pred_label, pred_group = self.model(imgs, crafts, boxing)
+            loss_label = self.loss_pred(pred_label, ys)
+
+            loss_group = self.loss_group(pred_group, groups)
+            loss = loss_label + loss_group
             self.optimizer.zero_grad()
-            pred, _ = self.model(imgs, crafts, boxing)
-            loss = loss_func(pred, ys)
-            loss.backward()
+            loss.backward(retain_graph=True)
             self.optimizer.step()
-            batch_loss = loss.item()
+            batch_loss = loss_label.item() + loss_group.item()
             total_loss += batch_loss
             pbar.set_postfix(train_loss=batch_loss)
         total_loss /= len(self.train_loader)
-        return total_loss[0]
+        return total_loss
 
-    def validate(self, epoch, iterator, loss_func):
+    def validate(self, epoch, iterator):
         self.model.eval()
-        total_loss = torch.Tensor([0])
+        total_loss = 0.0
 
-        accs, recs, pres, acc_boxes = [] ,[], [], []
-        for batch, (imgs, crafts, ys, boxing, idx) in enumerate(iterator):
+        recs_label, pres_label = [], []
+        recs_group, pres_group = [], []
+        for batch, (imgs, crafts, ys, groups, boxing, idx) in enumerate(iterator):
             imgs = imgs.permute(0, 3, 1, 2)
             imgs = imgs.to(device)
             crafts = crafts.to(device)
+            groups = groups.to(device)
             ys = ys.to(device)
-            pred, _ = self.model(imgs, crafts, boxing)
-            loss = loss_func(pred, ys)
+            pred_label, pred_group = self.model(imgs, crafts, boxing)
+            loss = self.loss_pred(pred_label, ys) + self.loss_group(pred_group, groups)
             total_loss += loss.item()
-            pred = pred.permute(0, 2, 3, 1)
-            _, argmax = pred.max(dim=3)
-            bbox = [self.vali_data.get_bbox(b) for b in idx]
-            acc_box = accuracy_bbox(ys, argmax, bbox)
-            acc = accuracy(ys.view(-1, 1), argmax.view(-1, 1))
+            pred_label = pred_label.permute(0, 2, 3, 1)
+            pred_group = pred_group.permute(0, 2, 3, 1)
+
+            _, argmax = pred_label.max(dim=3)
             rec = recall(ys.view(-1, 1), argmax.view(-1, 1))
             pre = precision(ys.view(-1, 1), argmax.view(-1, 1))
-            accs.append(acc)
-            acc_boxes.append(acc_box)
-            recs.append(rec)
-            pres.append(pre)
-        acc = sum(accs) / len(accs)
-        acc_box = sum(acc_boxes) / len(acc_boxes)
-        rec = sum(recs) / len(recs)
-        pre = sum(pres) / len(pres)
+            recs_label.append(rec)
+            pres_label.append(pre)
+
+            _, argmax = pred_group.max(dim=3)
+            rec = recall(groups.view(-1, 1), argmax.view(-1, 1))
+            pre = precision(groups.view(-1, 1), argmax.view(-1, 1))
+            recs_group.append(rec)
+            pres_group.append(pre)
+        rec_label = sum(recs_label) / len(recs_label)
+        pre_label = sum(pres_label) / len(pres_label)
+        rec_group = sum(recs_group) / len(recs_group)
+        pre_group = sum(pres_group) / len(pres_group)
+        f1_label = 2*rec_label*pre_label/(rec_label+pre_label)
+        f1_group = 2*rec_group*pre_group/(rec_group+pre_group)
 
         total_loss /= len(iterator)
-        return total_loss[0], acc, rec, pre, acc_box
+        return total_loss, f1_label, f1_group
     
     def test(self):
         self.model.eval()
@@ -445,14 +202,12 @@ class RealTrain(Train):
             imgs = imgs.permute(0, 2, 3, 1)
             crafts = crafts.squeeze()
             for img, craft, y, argmax in zip(imgs, crafts, ys, argmaxs):
-                
                 img = img.cpu().data.numpy()
                 img *= np.array([0.229 * 255.0, 0.224*255.0, 0.225*255.0], dtype=np.float32)
                 img += np.array([0.485 * 255.0, 0.456*255.0, 0.406*255.0], dtype=np.float32)
                 img = np.clip(img, 0, 255).astype(np.uint8)
                 craft = craft.cpu().data.numpy()
                 argmax = argmax.cpu().data.numpy()
-                
                 craft = np.clip(craft * 255, 0, 255).astype(np.uint8)
                 craft = cv2.applyColorMap(craft, cv2.COLORMAP_JET)
                 argmax = np.clip(argmax*(255 / len(self.train_data.label)), 0, 255).astype(np.uint8)
@@ -464,20 +219,23 @@ class RealTrain(Train):
             if count >= 100:
                 break
 
+    def count_parameters(self):
+        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+
+    def save(self, res):
+        with open("res/{}.json".format(self.model_name), "w") as fout:
+            json.dump(res, fout)
+
     def run(self):
-        alpha = [1-self.loss_alpha for _ in range(self.classes + 1)]
-        alpha[0] = self.loss_alpha
-        loss_func = FocalLoss(gamma=self.loss_gamma, alpha=alpha)
         print(self.model)
         print("parameters: ",self.count_parameters())
         res = {}
         for epoch in range(self.start_epoch, self.epochs):
-            train_loss = self.train(epoch, loss_func)
-            vali_loss, acc, rec, pre, acc_box = self.validate(epoch, self.vali_loader, loss_func)
+            train_loss = self.train(epoch)
+            vali_loss, f1_label, f1_group = self.validate(epoch, self.vali_loader)
             res[epoch] = dict(train_loss=float(train_loss), vali_loss=float(vali_loss),
-                              accuracy=float(acc), recall=float(rec), precision=float(pre),
-                              accuracy_bbox=float(acc_box))
-            print("train loss: {:.4} vali loss: {:.4}, rec: {:.4}, box_acc: {:.4}".format(train_loss, vali_loss, rec, acc_box))
+                              f1_label=float(f1_label), f1_group=float(f1_group))
+            print("train loss: {:.4} vali loss: {:.4}, f1_group: {:.4}, f1_label: {:.4}".format(train_loss, vali_loss, f1_group, f1_label))
             save_dict = dict(
                 model_state_dict = self.model.module.state_dict(),
                 optimizer_state_dict = self.optimizer.state_dict(),
@@ -487,12 +245,10 @@ class RealTrain(Train):
             )
             torch.save(save_dict, self.save_path)
             self.save(res)
-        self.test()
+        #self.test()
 
 if __name__ == "__main__":
     fire.Fire({
         "train": Train,
-        "label": LabelTrain,
-        "real": RealTrain
     })
 

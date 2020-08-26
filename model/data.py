@@ -4,6 +4,7 @@ import cv2
 import csv
 import json
 import numpy as np
+import collections
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -121,7 +122,9 @@ class Document:
         folder = "train" if is_train else "test"
         images, labels, bboxes, crafts, groups, _sizes = dict(), dict(), dict(), dict(), dict(), dict()
         for dpi in ["200", "300"]:
+        #for dpi in ["200"]:
             for noise in ["BW", "Color", "Gray"]:
+            #for noise in ["BW"]:
                 path = os.path.join(base_dir, folder, dpi, noise, "input")
                 for file_name in os.listdir(path):
                     if "jpg" not in file_name:
@@ -138,7 +141,6 @@ class Document:
                 path = os.path.join(base_dir, folder, dpi, noise, "label")
                 for file_name in os.listdir(path):
                     name = file_name.split(".")[0]
-                    print(name)
                     labels[name] = self.get_label(os.path.join(path, file_name))
 
                 path = os.path.join(base_dir, folder, dpi, noise, "group")
@@ -171,26 +173,34 @@ class Data0001(Dataset, Document):
     def get_label_info(self):
         with open(os.path.join("../data/AugmentedImage", "doc_0001_p01.json"), encoding="utf-8") as fin:
             label = json.load(fin)
+            label = collections.OrderedDict(label)
         final_label = {}
         label_mapper = {}
+        print("label", label)
         max_id = max([v for v in label.values() if v < 100])
+        print("max_id", max_id)
+
         for key, value in label.items():
             if value >= 100:
                 max_id += 1
                 final_label[key] = max_id
                 label_mapper[value] = max_id
-                max_id += 1
             else:
                 final_label[key] = value
+        print(label_mapper)
         self.label_mapper = label_mapper
         return final_label
 
     def get_label(self, path):
         label = np.load(path)
         label = cv2.resize(label, dsize=(self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        _max = 0
         for key, value in self.label_mapper.items():
             label[label==key] = value
+            _max = max(_max, key)
+        label[label>_max] = 0
         label = np.expand_dims(label, axis=2)
+        #print("label", np.max(label))
         return label.astype(np.int64)
 
     def get_boxing(self):
@@ -279,7 +289,7 @@ class Data0002(Dataset, Document):
 if __name__ == "__main__":
     real = Data0001(is_train=False)
     loader = DataLoader(real, batch_size=2, shuffle=False, num_workers=4)
-    for images, crafts, labels, boxing, bboxes in loader:
+    for images, crafts, labels, groups, boxing, idx in loader:
         print(images.size())
         print(labels.size())
         print(boxing.size())
