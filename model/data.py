@@ -173,14 +173,14 @@ class Data0001(Dataset, Document):
     def get_label_info(self):
         with open(os.path.join("../data/AugmentedImage", "doc_0001_p01.json"), encoding="utf-8") as fin:
             label = json.load(fin)
-            label = collections.OrderedDict(label)
         final_label = {}
         label_mapper = {}
         print("label", label)
         max_id = max([v for v in label.values() if v < 100])
         print("max_id", max_id)
-
-        for key, value in label.items():
+        keys = sorted(list(label.keys()))
+        for key in keys:
+            value = label[key]
             if value >= 100:
                 max_id += 1
                 final_label[key] = max_id
@@ -287,7 +287,7 @@ class Data0002(Dataset, Document):
         return self.data_len
 
 if __name__ == "__main__":
-    real = Data0001(is_train=False)
+    real = Data0001(is_train=True)
     loader = DataLoader(real, batch_size=2, shuffle=False, num_workers=4)
     for images, crafts, labels, groups, boxing, idx in loader:
         print(images.size())
