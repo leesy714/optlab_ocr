@@ -86,9 +86,9 @@ class Pipeline:
 		########################### setting resize ##########################
 		r_width, r_height = 480, 640
 		label_y = np.squeeze(label_y)
-		label_y = cv2.resize(label_y, (r_width, r_height))
-		group_y = np.squeeze(label_y)
-		group_y = cv2.resize(label_y, (r_width, r_height))
+		label_y = cv2.resize(label_y, (r_width, r_height), interpolation=cv2.INTER_AREA)
+		group_y = np.squeeze(group_y)
+		group_y = cv2.resize(group_y, (r_width, r_height), interpolation=cv2.INTER_AREA)
 		######################################################################
 		
 		# transformed img check
