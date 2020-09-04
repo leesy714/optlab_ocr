@@ -54,20 +54,8 @@ class Pipeline:
         return img, y
 
     def transform(self, img, y):#, bbox):
-        #img = self.noise_generate(img.copy())
-#         points, labels = [], []
-#         for idx, x1, y1, x2, y2, x3, y3, x4, y4 in bbox:
-#             points.append((x1, y1))
-#             points.append((x2, y2))
-#             points.append((x3, y3))
-#             points.append((x4, y4))
-#             labels.append(idx)
-#         bbox = points
         height, width = img.shape[0], img.shape[1]
         mode = random.randint(0, 3)
-        
-        print(mode)
-        print(y.shape)
         
         heatmap_img = np.clip(y * (255 /9), 0 ,255).astype(np.uint8)
         heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
@@ -101,13 +89,13 @@ class Pipeline:
         y = cv2.resize(y, (width // 2, height // 2))
         #y = y.transpose(1, 0).astype(np.uint8)
         
-        print(y.shape)
+        #print(y.shape)
         
-        heatmap_img = np.clip(y * (255 /9), 0 ,255).astype(np.uint8)
+        #heatmap_img = np.clip(y * (255 /9), 0 ,255).astype(np.uint8)
         #heatmap_img = np.clip(y.transpose(1, 0) * (255 /9), 0 ,255).astype(np.uint8)
-        heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
-        cv2.imwrite("test_sample/label_pers_ori_{}.png".format(mode), img)
-        cv2.imwrite("test_sample/label_pers_{}.png".format(mode), heatmap_img)
+        #heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+        #cv2.imwrite("test_sample/label_pers_ori_{}.png".format(mode), img)
+        #cv2.imwrite("test_sample/label_pers_{}.png".format(mode), heatmap_img)
         return img, y
 
     def save(self, img, y, res_path, input_name, label_name):
@@ -121,21 +109,19 @@ class Pipeline:
 
     def run(self):
         # load
-        root_path = 'DenoiseImageSet_20200806'
-        document_list = ['doc_0001']
-        folder1_list = ['train']#, 'test']
-        folder2_list = ['200']#, '300']
-        folder3_list = ['BW']#, 'Color', 'Gray']
+        root_path = '/data/AugmentedImage'
+        document_list = ['doc_0001', 'doc_0002']
+        folder1_list = ['train', 'test']
+        folder2_list = ['200', '300']
+        folder3_list = ['BW', 'Color', 'Gray']
         
         for document_name in document_list:
             for folder1 in folder1_list:
                 for folder2 in folder2_list:
                     for folder3 in folder3_list:
                         print('folder :', pjoin(folder1, folder2, folder3))
-                        # 해당 위치에 transform_input, transform_label folder 제작
-                        res_path = pjoin(root_path, document_name, folder1, folder2, folder3) 
-                        
-                        # 읽어야할 folder name
+                        break
+			#res_path = pjoin(root_path, document_name, folder1, folder2, folder3)
 
                         # input 열기
                         input_folder_path = pjoin(res_path, 'input')
