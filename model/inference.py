@@ -15,20 +15,39 @@ from train import accuracy, recall, precision
 
 device = 'cuda:1'
 
-def accuracy_box(y_pred, box):
-    label, x1, y1, x2, y2, x3, y3, x4, y4 = box
-    x_min, x_max = min(x1, x2, x3, x4), max(x1, x2, x3, x4)
-    y_min, y_max = min(y1, y2, y3, y4), max(y1, y2, y3, y4)
-    if x_min == x_max or y_min == y_max or y_min >= y_pred.shape[0] or x_min >= y_pred.shape[1]:
-        return False
-    y_pred_box = np.ravel(y_pred[y_min:y_max, x_min:x_max])
-    uniq, counts = np.unique(y_pred_box, return_counts=True)
-    uniq, counts = enumerate(list(uniq)), list(counts)
-    uniq = sorted(uniq, key=lambda v: counts[v[0]], reverse=True)
-    uniq = [u[1] for u in uniq]
-    value = uniq[0] if uniq[0] != 0 or len(uniq) <= 1 else uniq[1]
-    #acc.append(value != 0)
-    return value == label
+def accuracy_box(pred, y):
+    argmax = np.argmax(pred, axis=2)
+    y = np.expand_dims(y, axis=2)
+
+    y_contours, hierachy = cv2.findContours(y, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+    if len(y_contours) == 2:
+        y_contours = y_contours[0]
+    elif len(y_contours) == 3:
+        y_contours = y_contours[1]
+
+    res = []
+
+    for contour in y_contours:
+        if cv2.contourArea(contour) > 5:
+            x, _y, w, h = cv2.boundingRect(contour)
+            x_min, x_max = x, x + w
+            y_min, y_max = _y, _y + h
+
+            argmax_box = np.ravel(argmax[y_min:y_max, x_min:x_max])
+            uniq, counts = np.unique(argmax_box, return_counts=True)
+            uniq, counts = enumerate(list(uniq)), list(counts)
+            uniq = sorted(uniq, key=lambda v: counts[v[0]], reverse=True)
+            argmax_label = uniq[0][1]
+
+            y_box = np.ravel(y[y_min:y_max, x_min:x_max])
+            uniq, counts = np.unique(y_box, return_counts=True)
+            uniq, counts = enumerate(list(uniq)), list(counts)
+            uniq = sorted(uniq, key=lambda v: counts[v[0]], reverse=True)
+            y_label = uniq[0][1]
+
+            res.append(argmax_label == y_label)
+
+    return sum(res) / (len(res) + 1e-8)
 
 def IoU(pred, y):
     argmax = np.argmax(pred, axis=2)
@@ -161,6 +180,7 @@ def test(classes=None):
     recs_label, pres_label = [], []
     recs_group, pres_group = [], []
     IoUs_label, IoUs_group = [], []
+    bacc_label, bacc_group = [], []
 
     for imgs, crafts, ys, groups, boxing, idx in test_loader:
         file_num = int(idx[0])
@@ -183,7 +203,9 @@ def test(classes=None):
         pres_label.append(pre_label)
         f1_label = 2*rec_label*pre_label / (rec_label + pre_label + 1e-8)
         IoU_label = IoU(pred_label.squeeze().cpu().data.numpy(), ys.squeeze().cpu().data.numpy())
+        bacc = accuracy_box(pred_label.squeeze().cpu().data.numpy(), ys.squeeze().cpu().data.numpy())
         IoUs_label.append(IoU_label)
+        bacc_label.append(bacc)
 
         _, argmax_group = pred_group.max(dim=3)
         rec_group = recall(groups.view(-1, 1), argmax_group.view(-1, 1))
@@ -193,7 +215,9 @@ def test(classes=None):
         pres_group.append(pre_group)
         f1_group = 2*rec_group*pre_group / (rec_group + pre_group + 1e-8)
         IoU_group = IoU(pred_group.squeeze().cpu().data.numpy(), groups.squeeze().cpu().data.numpy())
+        bacc = accuracy_box(pred_group.squeeze().cpu().data.numpy(), groups.squeeze().cpu().data.numpy())
         IoUs_group.append(IoU_group)
+        bacc_group.append(bacc)
 
         print("[file-{:04d}] label f1-score: {:.4}, group f1-score: {:.4}, IoUs - l {:.4}, g {:.4}".format(
             file_num, float(f1_label), float(f1_group), float(IoU_label), float(IoU_group)))
@@ -234,9 +258,10 @@ def test(classes=None):
         cv2.imwrite("./res/model/{:04d}_pred_group.png".format(file_num), argmax_group)
         cv2.imwrite("./res/model/{:04d}_craft.png".format(file_num), craft)
 
-    #data_len = len(test_loader)
-    #print("[TOTAL] acc: {:.4}, rec: {:.4}, pre: {:.4}, acc_box: {:.4}".format(
-    #    accs / data_len, recs/data_len, pres/data_len, acc_boxs/data_len))
+    data_len = len(test_loader)
+    print("[TOTAL]")
+    print("[LABEL] rec: {:.4} pre: {:.4} IoU: {:.4} bacc: {:.4}".format(sum(recs_label)/data_len, sum(pres_label)/data_len, sum(IoUs_label)/data_len, sum(bacc_label)/data_len))
+    print("[GROUP] rec: {:.4} acc: {:.4} IoU: {:.4} bacc: {:.4}".format(sum(recs_group)/data_len, sum(pres_group)/data_len, sum(IoUs_group)/data_len, sum(bacc_group)/data_len))
 
 if __name__ == "__main__":
     test()
