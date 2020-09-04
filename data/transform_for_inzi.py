@@ -24,21 +24,11 @@ class Pipeline:
         self.bbox_postfix = ".pickle"
         self.annot_postfix = '.xml'
 
-    def load_files(self):
-        origin_file_list = os.listdir(pjoin(self.res_path, "origin"))
-        label_file_list = os.listdir(pjoin(self.res_path, "origin_label"))
-        bbox_file_list = os.listdir(pjoin(self.res_path, "origin_bbox"))
-        assert len(origin_file_list) == len(label_file_list)# == len(bbox_file_list)
-        origin_file_list.sort()
-        return origin_file_list
-
-    def load_np(self, input_path, label_path):
-        #idx = str(idx)
+    def load_np(self, input_path, label_path, group_path):
         img = cv2.imread(input_path, cv2.IMREAD_COLOR)
-        y = np.load(label_path)
-        #with open(pjoin(self.res_path, "origin_bbox", idx+self.bbox_postfix), 'rb') as fin:
-        #    bbox = pickle.load(fin)
-        return img, y
+        label_y = np.load(label_path)
+        group_y = np.load(group_path)
+        return img, label_y, group_y
     
     def make_img_paths(self, img_folder_path):
         img_names = os.listdir(img_folder_path)
@@ -46,20 +36,26 @@ class Pipeline:
         img_paths.sort()
         return img_paths
     
-    def effect(self, tran, img, y):#, bbox):
+    def effect(self, tran, img, label_y, group_y):
         assert isinstance(tran, Transform), "Inherit Transform class"
         img = tran.run(3, img, ipt_format="opencv", opt_format="opencv")
-        y = tran.run(1, np.expand_dims(y, 2), ipt_format="opencv", opt_format="opencv")
-        #bbox = tran.transform_points(bbox)
-        return img, y
+        label_y = tran.run(1, np.expand_dims(label_y, 2), ipt_format="opencv", opt_format="opencv")
+        group_y = tran.run(1, np.expand_dims(group_y, 2), ipt_format="opencv", opt_format="opencv")
+        return img, label_y, group_y
 
-    def transform(self, img, y):#, bbox):
+    def transform(self, img, label_y, group_y):
         height, width = img.shape[0], img.shape[1]
         mode = random.randint(0, 3)
         
-        heatmap_img = np.clip(y * (255 /9), 0 ,255).astype(np.uint8)
+        # img check
+        if not os.path.exists('test_sample'):
+            os.makedirs('test_sample')
+        heatmap_img = np.clip(label_y * (255 /9), 0 ,255).astype(np.uint8)
         heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
         cv2.imwrite("test_sample/prev_label_pers_{}.png".format(mode), heatmap_img)
+        heatmap_img = np.clip(group_y * (255 /9), 0 ,255).astype(np.uint8)
+        heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+        cv2.imwrite("test_sample/prev_group_pers_{}.png".format(mode), heatmap_img)
         
         if mode == 4:
             tran = Perspective(width, height)
@@ -76,77 +72,93 @@ class Pipeline:
                           up_slope=folded_up/100, down_slope=folded_down/100,
                           is_horizon=(mode%4==1))
         
-        y = cv2.resize(y, (width, height))
-        img, y = self.effect(tran, img, y)
+        label_y = cv2.resize(label_y, (width, height))
+        group_y = cv2.resize(group_y, (width, height))
+        img, label_y, group_y = self.effect(tran, img, label_y, group_y)
         if np.random.randint(8) == 0:
             per = Perspective(width, height)
-            img, y = self.effect(per, img, y)
+            img, label_y, group_y = self.effect(per, img, label_y, group_y)
 
         rot = Rotation(width, height)
-        img, y = self.effect(rot, img, y)
+        img, label_y, group_y = self.effect(rot, img, label_y, group_y)
         
-        y = np.squeeze(y)
-        y = cv2.resize(y, (width // 2, height // 2))
-        #y = y.transpose(1, 0).astype(np.uint8)
         
-        #print(y.shape)
+        ########################### setting resize ##########################
+        r_width, r_height = 480, 640
+        label_y = np.squeeze(label_y)
+        label_y = cv2.resize(label_y, (r_width, r_height))
+        group_y = np.squeeze(label_y)
+        group_y = cv2.resize(label_y, (r_width, r_height))
+        ######################################################################
         
-        #heatmap_img = np.clip(y * (255 /9), 0 ,255).astype(np.uint8)
-        #heatmap_img = np.clip(y.transpose(1, 0) * (255 /9), 0 ,255).astype(np.uint8)
-        #heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
-        #cv2.imwrite("test_sample/label_pers_ori_{}.png".format(mode), img)
-        #cv2.imwrite("test_sample/label_pers_{}.png".format(mode), heatmap_img)
-        return img, y
+        # transformed img check
+        cv2.imwrite("test_sample/group_pers_ori_{}.png".format(mode), img)
+        heatmap_img = np.clip(group_y * (255 /9), 0 ,255).astype(np.uint8)
+        heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+        cv2.imwrite("test_sample/group_pers_{}.png".format(mode), heatmap_img)
+        heatmap_img = np.clip(label_y * (255 /9), 0 ,255).astype(np.uint8)
+        heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+        cv2.imwrite("test_sample/label_pers_{}.png".format(mode), heatmap_img)
+        
+        return img, label_y, group_y
 
-    def save(self, img, y, res_path, input_name, label_name):
+    def save(self, img, label_y, group_y, res_path, input_name, label_name, group_name):
         if not os.path.exists(pjoin(res_path, 'transform_input')):
             os.makedirs(pjoin(res_path, 'transform_input'))
         if not os.path.exists(pjoin(res_path, 'transform_label')):
             os.makedirs(pjoin(res_path, 'transform_label'))
+        if not os.path.exists(pjoin(res_path, 'transform_group')):
+            os.makedirs(pjoin(res_path, 'transform_group'))
 
         cv2.imwrite(pjoin(res_path, 'transform_input', input_name), img)
-        np.save(pjoin(res_path, 'transform_label', label_name),  y)
+        np.save(pjoin(res_path, 'transform_label', label_name),  label_y)
+        np.save(pjoin(res_path, 'transform_group', group_name),  group_y)
 
     def run(self):
-        # load
-        root_path = '/data/AugmentedImage'
-        document_list = ['doc_0001', 'doc_0002']
-        folder1_list = ['train', 'test']
-        folder2_list = ['200', '300']
-        folder3_list = ['BW', 'Color', 'Gray']
+        ######################### select folder list #########################
+        root_path = '../data/AugmentedImage'
+        document_list = ['doc_0001']#, 'doc_0002']
+        folder1_list = ['train']#, 'test']
+        folder2_list = ['200']#, '300']
+        folder3_list = ['BW']#, 'Color', 'Gray']
+        ######################################################################
         
         for document_name in document_list:
             for folder1 in folder1_list:
                 for folder2 in folder2_list:
                     for folder3 in folder3_list:
-                        print('folder :', pjoin(folder1, folder2, folder3))
-                        break
-			#res_path = pjoin(root_path, document_name, folder1, folder2, folder3)
+                        print('folder :', pjoin(document_name, folder1, folder2, folder3))                        
+                        res_path = pjoin(root_path, document_name, folder1, folder2, folder3)
 
                         # input 열기
                         input_folder_path = pjoin(res_path, 'input')
                         input_img_paths = self.make_img_paths(input_folder_path)
-                        print(input_img_paths)
-                    
+                        #print(input_img_paths)
+                        
+                        
                         # label 열기
                         label_folder_path = pjoin(res_path, 'label')
                         label_img_paths = self.make_img_paths(label_folder_path)
-                        print(label_img_paths)
+                        #print(label_img_paths)
                         
-                        for input_path, label_path in zip(input_img_paths, label_img_paths):
+                        # group 열기
+                        group_folder_path = pjoin(res_path, 'group')
+                        group_img_paths = self.make_img_paths(group_folder_path)
+                        #print(group_img_paths)
+                    
+                        for input_path, label_path, group_path in zip(input_img_paths, label_img_paths, group_img_paths):
                             #print(input_path, label_path)
                             input_name = os.path.basename(input_path)
                             label_name = os.path.basename(label_path)
-                            print(input_name)
-                            print(label_name)
+                            group_name = os.path.basename(group_path)
                             
                             if label_name[-3:] != 'npy':
-                                print(label_name)
+                                print('label file name error', label_name)
                                 continue
                             
-                            img, y = self.load_np(input_path, label_path)
-                            img, y = self.transform(img, y)
-                            self.save(img, y, res_path, input_name, label_name)
+                            img, label_y, group_y = self.load_np(input_path, label_path, group_path)
+                            img, label_y, group_y = self.transform(img, label_y, group_y)
+                            self.save(img, label_y, group_y, res_path, input_name, label_name, group_name)
                         
 
 
