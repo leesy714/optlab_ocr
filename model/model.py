@@ -359,3 +359,68 @@ class Model8(nn.Module):
         feature = torch.cat((img_feature, label_feature), dim=1)
         y = self.conv_cls(feature)
         return y, feature
+
+class Model0001(nn.Module):
+
+    def __init__(self, anchor, pred_classes, group_classes):
+        super(Model0001, self).__init__()
+
+        self.conv_img = nn.Sequential(
+            #nn.Conv2d(4, 16, kernel_size=(3, 3), padding=(1, 1)),
+            nn.Conv2d(3, 16, kernel_size=(3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            res_block(16, 16),
+            res_block(16, 16)
+        )
+        self.conv_anchor = nn.Sequential(
+            nn.Conv2d(anchor, 16, kernel_size=(3, 3), padding=(1, 1)),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            res_block(16, 16),
+        )
+        self.conv_cls = nn.Sequential(
+            nn.MaxPool2d(2, stride=2),
+            #res_block(32, 32),
+            res_block(16, 32),
+            res_block(32, 32),
+            res_block(32, 32),
+            res_block(32, 64),
+            res_block(64, 64),
+            res_block(64, 32),
+        )
+
+        self.conv_pred_label = nn.Sequential(
+            res_block(32, 32),
+            res_block(32, 16),
+            nn.ConvTranspose2d(16, 16, 2, stride=2),
+            nn.Conv2d(16, pred_classes + 1, kernel_size=1),
+        )
+        self.conv_pred_group = nn.Sequential(
+            res_block(32, 32),
+            res_block(32, 16),
+            nn.ConvTranspose2d(16, 16, 2, stride=2),
+            nn.Conv2d(16, group_classes + 1, kernel_size=1),
+        )
+
+        init_weights(self.conv_img.modules())
+        init_weights(self.conv_anchor.modules())
+        init_weights(self.conv_cls.modules())
+        init_weights(self.conv_pred_label.modules())
+        init_weights(self.conv_pred_group.modules())
+
+    def forward(self, imgs, crafts, labels):
+        x = imgs
+        #x = torch.cat((imgs, crafts), dim=1)
+        img_feature = self.conv_img(x)
+        #anchor_feature = self.conv_anchor(labels)
+
+        #feature = torch.cat((img_feature, anchor_feature), dim=1)
+        feature = img_feature
+        feature = self.conv_cls(feature)
+
+        pred_label = self.conv_pred_label(feature)
+        group_label = self.conv_pred_group(feature)
+        return pred_label, group_label
+
+

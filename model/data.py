@@ -162,7 +162,7 @@ class Data0001(Dataset, Document):
         self.label = self.get_label_info()
 
         self.boxing = self.get_boxing()
-        base_dir = "../data/AugmentedImage/doc_0001"
+        base_dir = "/data/AugmentedImage/doc_0001"
         self.images, self.labels, self.bboxes, self.crafts, self.groups = self.load(base_dir, is_train)
 
         self.data_len = len(self.images)
@@ -171,7 +171,7 @@ class Data0001(Dataset, Document):
         self.mapper = {i: name for i, name in enumerate(keys)}
 
     def get_label_info(self):
-        with open(os.path.join("../data/AugmentedImage", "doc_0001_p01.json"), encoding="utf-8") as fin:
+        with open(os.path.join("/data/AugmentedImage", "doc_0001_p01.json"), encoding="utf-8") as fin:
             label = json.load(fin)
         final_label = {}
         label_mapper = {}
