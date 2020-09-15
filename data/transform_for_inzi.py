@@ -48,14 +48,14 @@ class Pipeline:
 		mode = random.randint(0, 3)
 		
 		# img check
-#		 if not os.path.exists('test_sample'):
-#			 os.makedirs('test_sample')
-#		 heatmap_img = np.clip(label_y * (255 /9), 0 ,255).astype(np.uint8)
-#		 heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
-#		 cv2.imwrite("test_sample/prev_label_pers_{}.png".format(mode), heatmap_img)
-#		 heatmap_img = np.clip(group_y * (255 /9), 0 ,255).astype(np.uint8)
-#		 heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
-#		 cv2.imwrite("test_sample/prev_group_pers_{}.png".format(mode), heatmap_img)
+#		if not os.path.exists('test_sample'):
+#			os.makedirs('test_sample')
+#		heatmap_img = np.clip(label_y * (255 /9), 0 ,255).astype(np.uint8)
+#		heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+#		cv2.imwrite("test_sample/prev_label_pers_{}.png".format(mode), heatmap_img)
+#		heatmap_img = np.clip(group_y * (255 /9), 0 ,255).astype(np.uint8)
+#		heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+#       cv2.imwrite("test_sample/prev_group_pers_{}.png".format(mode), heatmap_img)
 		
 		if mode == 4:
 			tran = Perspective(width, height)
@@ -72,12 +72,12 @@ class Pipeline:
 						  up_slope=folded_up/100, down_slope=folded_down/100,
 						  is_horizon=(mode%4==1))
 		
-		label_y = cv2.resize(label_y, (width, height))
-		group_y = cv2.resize(group_y, (width, height))
+		#label_y = cv2.resize(label_y, (width, height))
+		#group_y = cv2.resize(group_y, (width, height))
 		img, label_y, group_y = self.effect(tran, img, label_y, group_y)
-		if np.random.randint(8) == 0:
-			per = Perspective(width, height)
-			img, label_y, group_y = self.effect(per, img, label_y, group_y)
+		#if np.random.randint(8) == 0:
+		#	per = Perspective(width, height)
+		#	img, label_y, group_y = self.effect(per, img, label_y, group_y)
 
 		rot = Rotation(width, height)
 		img, label_y, group_y = self.effect(rot, img, label_y, group_y)
@@ -86,19 +86,19 @@ class Pipeline:
 		########################### setting resize ##########################
 		r_width, r_height = 480, 640
 		label_y = np.squeeze(label_y)
-		label_y = cv2.resize(label_y, (r_width, r_height), interpolation=cv2.INTER_AREA)
+		label_y = cv2.resize(label_y, (r_width, r_height), interpolation=cv2.INTER_NEAREST)
 		group_y = np.squeeze(group_y)
-		group_y = cv2.resize(group_y, (r_width, r_height), interpolation=cv2.INTER_AREA)
+		group_y = cv2.resize(group_y, (r_width, r_height), interpolation=cv2.INTER_NEAREST)
 		######################################################################
 		
 		# transformed img check
-#		 cv2.imwrite("test_sample/group_pers_ori_{}.png".format(mode), img)
-#		 heatmap_img = np.clip(group_y * (255 /9), 0 ,255).astype(np.uint8)
-#		 heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
-#		 cv2.imwrite("test_sample/group_pers_{}.png".format(mode), heatmap_img)
-#		 heatmap_img = np.clip(label_y * (255 /9), 0 ,255).astype(np.uint8)
-#		 heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
-#		 cv2.imwrite("test_sample/label_pers_{}.png".format(mode), heatmap_img)
+		cv2.imwrite("test_sample/group_pers_ori_{}.png".format(mode), img)
+		heatmap_img = np.clip(group_y * (255 /9), 0 ,255).astype(np.uint8)
+		heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+		cv2.imwrite("test_sample/group_pers_{}.png".format(mode), heatmap_img)
+		heatmap_img = np.clip(label_y * (255 /9), 0 ,255).astype(np.uint8)
+		heatmap_img = cv2.applyColorMap(heatmap_img, cv2.COLORMAP_JET)
+		cv2.imwrite("test_sample/label_pers_{}.png".format(mode), heatmap_img)
 		
 		return img, label_y, group_y
 
@@ -117,7 +117,7 @@ class Pipeline:
 	def run(self):
 		######################### select folder list #########################
 		root_path = '/data/AugmentedImage'
-		document_list = ['doc_0001', 'doc_0002']
+		document_list = ['doc_0002'] #['doc_0001', 'doc_0002']
 		folder1_list = ['train', 'test']
 		folder2_list = ['200', '300']
 		folder3_list = ['BW', 'Color', 'Gray']
