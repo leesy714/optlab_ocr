@@ -135,7 +135,7 @@ class Shift(Transform):
                                 [width + self.slide(h+1), height + self.spacing]], np.float32)
 
                 mat = cv2.getPerspectiveTransform(src, dst)
-                warp = cv2.warpPerspective(self.origin, mat, (self.width, self.height))
+                warp = cv2.warpPerspective(self.origin, mat, (self.width, self.height), flags = cv2.INTER_NEAREST)
                 output[height: height + self.spacing, width:width + self.spacing] = warp[height: height + self.spacing, width:width+self.spacing]
 
         if not self.is_horizon:

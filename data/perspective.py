@@ -96,7 +96,7 @@ class Perspective(Transform):
 
         M_redistort = cv2.getPerspectiveTransform(pts1,pts2)
 
-        self.origin = cv2.warpPerspective(self.origin, M_redistort, (self.width,self.height), flags = cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue = [0, 0, 0, 0])
+        self.origin = cv2.warpPerspective(self.origin, M_redistort, (self.width,self.height), flags = cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue = [0, 0, 0, 0])
 
         #plt.figure()
         #plt.imshow(cv2.cvtColor(self.origin, cv2.COLOR_BGR2RGB))

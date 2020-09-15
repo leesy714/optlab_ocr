@@ -41,7 +41,7 @@ class Rotation(Transform):
         self.origin = cv2.resize(self.origin, dsize=(self.width, self.height))
         if self.verbose:
             print("origin", self.origin.shape)
-        output = cv2.warpAffine(self.origin, self.M, (self.width, self.height))
+        output = cv2.warpAffine(self.origin, self.M, (self.width, self.height), flags = cv2.INTER_NEAREST)
 
         return self.save(output, opt, opt_format)
 
