@@ -5,7 +5,7 @@ mkl-random==1.0.2
 mkl-service==2.3.0
 numpy==1.18.1
 olefile==0.46
-Pillow==7.0.0
+Pillow==9.0.1
 six==1.14.0
 termcolor==1.1.0
 torch==1.4.0
